@@ -1,0 +1,17 @@
+name: Daily TMDB Sync
+
+on:
+  schedule:
+    - cron: "0 3 * * *" # jam 3 pagi UTC (≈ jam 10 pagi WIB)
+  workflow_dispatch: # bisa trigger manual dari GitHub UI
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Call Supabase Edge Function
+        run: |
+          curl -X POST https://xlfchtwebtehpuiaqush.supabase.co/sync_tmdb \
+          -H "Content-Type: application/json"
+          -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
