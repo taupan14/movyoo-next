@@ -12,6 +12,6 @@ jobs:
     steps:
       - name: Call Supabase Edge Function
         run: |
-          curl -X POST https://xlfchtwebtehpuiaqush.supabase.co/sync_tmdb \
+          curl -X POST https://xlfchtwebtehpuiaqush.supabase.co/functions/v1/sync_tmdb \
           -H "Content-Type: application/json"
           -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
