@@ -13,5 +13,6 @@ jobs:
       - name: Call Supabase Edge Function
         run: |
           curl -X POST https://xlfchtwebtehpuiaqush.supabase.co/functions/v1/sync_tmdb \
-          -H "Content-Type: application/json"
-          -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+          -H "Content-Type: application/json" \
+          -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+          -w "\nHTTP Status: %{http_code}\n"
