@@ -2,7 +2,7 @@ name: Daily TMDB Sync
 
 on:
   schedule:
-    - cron: "0 3 * * *" # jam 3 pagi UTC (≈ jam 10 pagi WIB)
+    - cron: "0 1 * * *" # jam 1 pagi UTC (≈ jam 8 pagi WIB)
   workflow_dispatch: # bisa trigger manual dari GitHub UI
 
 jobs:
