@@ -10,17 +10,6 @@ const supabase = createClient(
 
 const TMDB_API_KEY = Deno.env.get("TMDB_API_KEY")!;
 
-const auth = req.headers.get("Authorization");
-const url = new URL(req.url);
-
-if (url.pathname.includes("sync")) {
-  const auth = req.headers.get("Authorization");
-
-  if (auth !== `Bearer ${Deno.env.get("CRON_SECRET")}`) {
-    return new Response("Unauthorized", { status: 401 });
-  }
-}
-
 // 🔥 helper fetch
 async function tmdbFetch(path: string, params: Record<string, string> = {}) {
   const url = new URL(`${TMDB_BASE}${path}`);
