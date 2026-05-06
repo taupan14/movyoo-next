@@ -2,7 +2,7 @@ name: Daily TMDB Sync
 
 on:
   schedule:
-    - cron: "0 1 * * *" # jam 1 pagi UTC (≈ jam 8 pagi WIB)
+    - cron: "30 1 * * *" # jam 1.30 pagi UTC (≈ jam 8.30 pagi WIB)
   workflow_dispatch: # bisa trigger manual dari GitHub UI
 
 jobs:
@@ -14,5 +14,5 @@ jobs:
         run: |
           curl -X POST https://xlfchtwebtehpuiaqush.supabase.co/functions/v1/sync_tmdb \
           -H "Content-Type: application/json" \
-          -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+          -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
           -w "\nHTTP Status: %{http_code}\n"
