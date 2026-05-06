@@ -2,17 +2,50 @@ name: Daily TMDB Sync
 
 on:
   schedule:
-    - cron: "59 1 * * *" # jam 1.55 pagi UTC (≈ jam 8.55 pagi WIB)
-  workflow_dispatch: # bisa trigger manual dari GitHub UI
+    - cron: "58 8 * * *" # jam 1.55 pagi UTC (≈ jam 8.55 pagi WIB)
+  workflow_dispatch:
 
 jobs:
-  sync:
+  sync-trending:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Call Supabase Edge Function
+      - name: Sync trending
         run: |
-          curl -X POST https://xlfchtwebtehpuiaqush.supabase.co/functions/v1/sync_tmdb \
+          curl -X POST "https://xlfchtwebtehpuiaqush.supabase.co/functions/v1/sync_tmdb?source=trending" \
           -H "Content-Type: application/json" \
           -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+          --max-time 140 \
+          -w "\nHTTP Status: %{http_code}\n"
+
+  sync-popular:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync popular
+        run: |
+          curl -X POST "https://xlfchtwebtehpuiaqush.supabase.co/functions/v1/sync_tmdb?source=popular" \
+          -H "Content-Type: application/json" \
+          -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+          --max-time 140 \
+          -w "\nHTTP Status: %{http_code}\n"
+
+  sync-top-rated:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync top_rated
+        run: |
+          curl -X POST "https://xlfchtwebtehpuiaqush.supabase.co/functions/v1/sync_tmdb?source=top_rated" \
+          -H "Content-Type: application/json" \
+          -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+          --max-time 140 \
+          -w "\nHTTP Status: %{http_code}\n"
+
+  sync-upcoming:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync upcoming
+        run: |
+          curl -X POST "https://xlfchtwebtehpuiaqush.supabase.co/functions/v1/sync_tmdb?source=upcoming" \
+          -H "Content-Type: application/json" \
+          -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+          --max-time 140 \
           -w "\nHTTP Status: %{http_code}\n"
