@@ -49,3 +49,14 @@ jobs:
           -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
           --max-time 140 \
           -w "\nHTTP Status: %{http_code}\n"
+
+  sync-discover:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync discover (bank data)
+        run: |
+          curl -X POST "https://xlfchtwebtehpuiaqush.supabase.co/functions/v1/sync_tmdb?source=discover" \
+          -H "Content-Type: application/json" \
+          -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+          --max-time 140 \
+          -w "\nHTTP Status: %{http_code}\n"
