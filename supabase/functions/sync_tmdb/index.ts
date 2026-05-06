@@ -13,7 +13,7 @@ const TMDB_API_KEY = Deno.env.get("TMDB_API_KEY")!;
 // ─── CONFIG ────────────────────────────────────────────────────────────────
 const BATCH_SIZE = 5; // movies processed concurrently per batch
 const MOVIES_PER_SOURCE = 20; // max movies per trending/popular/etc source
-const DISCOVER_PAGES = 5; // pages fetched per discover run (20 movies/page = 100 movies)
+const DISCOVER_PAGES = 2; // 2 pages × ~44s = ~88s, aman di bawah limit 150s
 const RETRY_LIMIT = 3;
 const RETRY_DELAY_MS = 500;
 
@@ -219,17 +219,15 @@ async function syncMovie(movie: any, platformMap: any): Promise<void> {
   for (const p of flatrate) {
     const platform = platformMap[p.provider_id];
     if (!platform) continue;
-    await supabase
-      .from("movie_platforms")
-      .upsert(
-        {
-          movie_id: movieId,
-          platform_id: platform.id,
-          region: "ID",
-          type: "streaming",
-        },
-        { onConflict: "movie_id,platform_id,region" },
-      );
+    await supabase.from("movie_platforms").upsert(
+      {
+        movie_id: movieId,
+        platform_id: platform.id,
+        region: "ID",
+        type: "streaming",
+      },
+      { onConflict: "movie_id,platform_id,region" },
+    );
   }
 
   // ── CAST (top 10) ──
@@ -274,15 +272,14 @@ async function syncMovie(movie: any, platformMap: any): Promise<void> {
   }
 }
 
-// ─── DISCOVER SYNC (bank data semua film) ──────────────────────────────────
-// Iterates through TMDB discover pages sorted by popularity descending.
-// Tracks the last synced page in sync_state table so each run continues
-// from where it left off — no duplicate work, no full re-scan.
+// ─── DISCOVER SYNC ─────────────────────────────────────────────────────────
+// Stateful: simpan halaman terakhir di sync_state, tiap run lanjut dari situ.
+// DISCOVER_PAGES=2 → ~88s per run, aman di bawah limit 150s Supabase.
+// Dengan cron tiap 4 jam → 12 run/hari × 40 film = 480 film/hari.
 
 async function syncDiscover(
   platformMap: any,
 ): Promise<{ succeeded: number; failed: number }> {
-  // Load last synced page from state table
   const { data: stateRow } = await supabase
     .from("sync_state")
     .select("value")
@@ -304,7 +301,7 @@ async function syncDiscover(
       data = await tmdbFetch("/discover/movie", {
         sort_by: "popularity.desc",
         page: String(page),
-        "vote_count.gte": "50", // filter noise / film tanpa vote
+        "vote_count.gte": "10",
       });
     } catch (err) {
       console.error(`[discover] Failed to fetch page ${page}:`, err.message);
@@ -330,29 +327,27 @@ async function syncDiscover(
       `[discover] Page ${page}/${data.total_pages}: ${succeeded} ok, ${failed} failed`,
     );
 
-    // Reset to page 1 when we reach the last available page
+    // Reset ke halaman 1 kalau sudah habis semua
     if (page >= data.total_pages) {
       lastCompletedPage = 0;
       console.log(
-        `[discover] Reached last page (${data.total_pages}), resetting to page 1 next run.`,
+        `[discover] Reached last page (${data.total_pages}), will reset to page 1 next run.`,
       );
       break;
     }
 
-    await sleep(300); // jeda antar halaman
+    await sleep(300);
   }
 
-  // Persist progress
-  await supabase
-    .from("sync_state")
-    .upsert(
-      {
-        key: "discover_last_page",
-        value: String(lastCompletedPage),
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "key" },
-    );
+  // Simpan progress
+  await supabase.from("sync_state").upsert(
+    {
+      key: "discover_last_page",
+      value: String(lastCompletedPage),
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "key" },
+  );
 
   return { succeeded: totalSucceeded, failed: totalFailed };
 }
@@ -363,7 +358,6 @@ serve(async (req) => {
   const url = new URL(req.url);
   const sourceParam = url.searchParams.get("source");
 
-  // "discover" = bank data semua film (paginated, stateful)
   const CURATED_SOURCES: Record<string, string> = {
     trending: "/trending/movie/day",
     popular: "/movie/popular",
@@ -399,12 +393,10 @@ serve(async (req) => {
     let totalFailed = 0;
 
     if (sourceParam === "discover") {
-      // ── Bank data mode: paginated discover ──
       const { succeeded, failed } = await syncDiscover(platformMap);
       totalSucceeded = succeeded;
       totalFailed = failed;
     } else {
-      // ── Curated sources mode ──
       const sourcesToRun = sourceParam
         ? { [sourceParam]: CURATED_SOURCES[sourceParam] }
         : CURATED_SOURCES;

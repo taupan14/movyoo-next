@@ -2,61 +2,59 @@ name: Daily TMDB Sync
 
 on:
   schedule:
-    - cron: "58 8 * * *" # jam 1.55 pagi UTC (≈ jam 8.55 pagi WIB)
+    - cron: "50 1 * * *" # curated sources, sekali sehari jam 08.50 WIB
+    - cron: "0 */4 * * *" # discover, tiap 4 jam → 6x sehari
   workflow_dispatch:
 
 jobs:
+  # ── Curated sources (sekali sehari) ────────────────────────────────────────
   sync-trending:
+    if: github.event.schedule == '50 8 * * *' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Sync trending
         run: |
           curl -X POST "https://xlfchtwebtehpuiaqush.supabase.co/functions/v1/sync_tmdb?source=trending" \
-          -H "Content-Type: application/json" \
           -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
-          --max-time 140 \
-          -w "\nHTTP Status: %{http_code}\n"
+          --max-time 140 -w "\nHTTP Status: %{http_code}\n"
 
   sync-popular:
+    if: github.event.schedule == '50 8 * * *' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Sync popular
         run: |
           curl -X POST "https://xlfchtwebtehpuiaqush.supabase.co/functions/v1/sync_tmdb?source=popular" \
-          -H "Content-Type: application/json" \
           -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
-          --max-time 140 \
-          -w "\nHTTP Status: %{http_code}\n"
+          --max-time 140 -w "\nHTTP Status: %{http_code}\n"
 
   sync-top-rated:
+    if: github.event.schedule == '50 8 * * *' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Sync top_rated
         run: |
           curl -X POST "https://xlfchtwebtehpuiaqush.supabase.co/functions/v1/sync_tmdb?source=top_rated" \
-          -H "Content-Type: application/json" \
           -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
-          --max-time 140 \
-          -w "\nHTTP Status: %{http_code}\n"
+          --max-time 140 -w "\nHTTP Status: %{http_code}\n"
 
   sync-upcoming:
+    if: github.event.schedule == '50 8 * * *' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Sync upcoming
         run: |
           curl -X POST "https://xlfchtwebtehpuiaqush.supabase.co/functions/v1/sync_tmdb?source=upcoming" \
-          -H "Content-Type: application/json" \
           -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
-          --max-time 140 \
-          -w "\nHTTP Status: %{http_code}\n"
+          --max-time 140 -w "\nHTTP Status: %{http_code}\n"
 
+  # ── Discover / bank data (tiap 4 jam) ──────────────────────────────────────
   sync-discover:
+    if: github.event.schedule == '0 */4 * * *' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
-      - name: Sync discover (bank data)
+      - name: Sync discover
         run: |
           curl -X POST "https://xlfchtwebtehpuiaqush.supabase.co/functions/v1/sync_tmdb?source=discover" \
-          -H "Content-Type: application/json" \
           -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
-          --max-time 140 \
-          -w "\nHTTP Status: %{http_code}\n"
+          --max-time 140 -w "\nHTTP Status: %{http_code}\n"
