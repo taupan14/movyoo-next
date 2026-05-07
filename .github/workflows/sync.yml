@@ -68,14 +68,3 @@ jobs:
           curl -X POST "https://xlfchtwebtehpuiaqush.supabase.co/functions/v1/sync_tmdb?source=discover" \
           -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
           --max-time 140 -w "\nHTTP Status: %{http_code}\n"
-
-  # ── Cinema scraping (tiap 4 jam, bersamaan dengan discover) ────────────────
-  sync-cinema:
-    if: github.event.schedule == '0 */4 * * *' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Sync cinema schedules (21cineplex + CGV)
-        run: |
-          curl -X POST "https://xlfchtwebtehpuiaqush.supabase.co/functions/v1/sync_cinema" \
-          -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
-          --max-time 240 -w "\nHTTP Status: %{http_code}\n"

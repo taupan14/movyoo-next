@@ -7,6 +7,7 @@ import { supabase } from "./supabase";
 
 export interface CachedMovie {
   id: number;
+  tmdb_id: number;
   title: string;
   poster_path: string | null;
   backdrop_path: string | null;
@@ -61,7 +62,7 @@ async function fetchCategory(
       `
       sort_order,
       movies (
-        id, title, poster_path, backdrop_path,
+        id, tmdb_id, title, poster_path, backdrop_path,
         vote_average, release_date, popularity, overview, overview_en
       )
     `,
@@ -76,12 +77,15 @@ async function fetchCategory(
     return [];
   }
 
+  // console.log(`[movies-db] fetchCategory(${category}): ${data?.length} items`);
   return (data ?? [])
     .map((row: any) => {
       const m = row.movies;
+
       if (!m) return null;
       return {
         id: m.id,
+        tmdb_id: m.tmdb_id,
         title: m.title,
         poster_path: m.poster_path,
         backdrop_path: m.backdrop_path,
@@ -114,6 +118,7 @@ async function fetchIndonesian(
 
   return (data ?? []).map((m: any) => ({
     id: m.id,
+    tmdb_id: m.tmdb_id,
     title: m.title,
     poster_path: m.poster_path,
     backdrop_path: m.backdrop_path,
@@ -127,11 +132,11 @@ async function fetchIndonesian(
 export async function fetchHomeMovies(lang: string, region: string) {
   const [trendingRes, nowPlayingRes, upcomingRes, popularRes, indonesianRes] =
     await Promise.allSettled([
-      fetchCategory("trending", lang, region, 15),
+      fetchCategory("trending", lang, region, 25),
       fetchCategory("now_playing", lang, region, 15),
       fetchCategory("upcoming", lang, region, 15),
       fetchCategory("popular", lang, region, 15),
-      fetchIndonesian(lang, 15),
+      fetchIndonesian(lang, 25),
     ]);
 
   return {
@@ -328,6 +333,7 @@ export async function fetchExploreMovies(
 
   const movies: CachedMovie[] = (data ?? []).map((m: any) => ({
     id: m.id,
+    tmdb_id: m.tmdb_id,
     title: m.title,
     poster_path: m.poster_path,
     backdrop_path: m.backdrop_path,

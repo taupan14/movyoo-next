@@ -1,9 +1,9 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { getPosterUrl, getBackdropUrl } from '@/lib/tmdb';
-import { cn } from '@/lib/utils';
-import { Star, TriangleAlert as AlertTriangle } from 'lucide-react';
+import Link from "next/link";
+import { getPosterUrl, getBackdropUrl } from "@/lib/tmdb";
+import { cn } from "@/lib/utils";
+import { Star, TriangleAlert as AlertTriangle } from "lucide-react";
 
 interface Movie {
   id: number;
@@ -19,7 +19,7 @@ interface Movie {
 
 interface MovieCardProps {
   movie: Movie;
-  variant?: 'poster' | 'backdrop' | 'compact';
+  variant?: "poster" | "backdrop" | "compact";
   showRating?: boolean;
   showLeaving?: boolean;
   leavingDays?: number;
@@ -28,15 +28,18 @@ interface MovieCardProps {
 
 export function MovieCard({
   movie,
-  variant = 'poster',
+  variant = "poster",
   showRating = true,
   showLeaving = false,
   leavingDays,
   className,
 }: MovieCardProps) {
-  if (variant === 'backdrop') {
+  if (variant === "backdrop") {
     return (
-      <Link href={`/movie/${movie.id}`} className={cn('block group', className)}>
+      <Link
+        href={`/movie/${movie.tmdb_id}`}
+        className={cn("block group", className)}
+      >
         <div className="relative rounded-xl overflow-hidden hover-lift card-shine">
           <div className="aspect-video relative">
             <img
@@ -46,7 +49,9 @@ export function MovieCard({
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
             <div className="absolute bottom-0 left-0 right-0 p-4">
-              <h3 className="font-semibold text-white text-sm line-clamp-2">{movie.title}</h3>
+              <h3 className="font-semibold text-white text-sm line-clamp-2">
+                {movie.title}
+              </h3>
               <div className="flex items-center gap-2 mt-1">
                 {showRating && (
                   <span className="flex items-center gap-1 text-xs text-yellow-400">
@@ -55,7 +60,9 @@ export function MovieCard({
                   </span>
                 )}
                 {movie.release_date && (
-                  <span className="text-xs text-white/60">{movie.release_date?.slice(0, 4)}</span>
+                  <span className="text-xs text-white/60">
+                    {movie.release_date?.slice(0, 4)}
+                  </span>
                 )}
               </div>
             </div>
@@ -71,12 +78,15 @@ export function MovieCard({
     );
   }
 
-  if (variant === 'compact') {
+  if (variant === "compact") {
     return (
-      <Link href={`/movie/${movie.id}`} className={cn('flex gap-3 group', className)}>
+      <Link
+        href={`/movie/${movie.tmdb_id}`}
+        className={cn("flex gap-3 group", className)}
+      >
         <div className="w-16 h-24 rounded-lg overflow-hidden flex-shrink-0">
           <img
-            src={getPosterUrl(movie.poster_path, 'w185')}
+            src={getPosterUrl(movie.poster_path, "w185")}
             alt={movie.title}
             className="w-full h-full object-cover"
           />
@@ -93,11 +103,15 @@ export function MovieCard({
               </span>
             )}
             {movie.release_date && (
-              <span className="text-xs text-muted-foreground">{movie.release_date?.slice(0, 4)}</span>
+              <span className="text-xs text-muted-foreground">
+                {movie.release_date?.slice(0, 4)}
+              </span>
             )}
           </div>
           {movie.overview && (
-            <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{movie.overview}</p>
+            <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+              {movie.overview}
+            </p>
           )}
         </div>
       </Link>
@@ -105,7 +119,10 @@ export function MovieCard({
   }
 
   return (
-    <Link href={`/movie/${movie.id}`} className={cn('block group', className)}>
+    <Link
+      href={`/movie/${movie.tmdb_id}`}
+      className={cn("block group", className)}
+    >
       <div className="relative rounded-xl overflow-hidden hover-lift card-shine">
         <div className="aspect-[2/3] relative">
           <img
@@ -115,13 +132,17 @@ export function MovieCard({
           />
           <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
           <div className="absolute bottom-0 left-0 right-0 p-3 opacity-0 group-hover:opacity-100 transition-opacity">
-            <h3 className="font-semibold text-white text-sm line-clamp-2">{movie.title}</h3>
+            <h3 className="font-semibold text-white text-sm line-clamp-2">
+              {movie.title}
+            </h3>
           </div>
         </div>
         {showRating && movie.vote_average > 0 && (
           <div className="absolute top-2 right-2 flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-black/70 backdrop-blur-sm text-xs">
             <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
-            <span className="text-white font-medium">{movie.vote_average?.toFixed(1)}</span>
+            <span className="text-white font-medium">
+              {movie.vote_average?.toFixed(1)}
+            </span>
           </div>
         )}
         {showLeaving && leavingDays !== undefined && (
@@ -136,7 +157,9 @@ export function MovieCard({
           {movie.title}
         </h3>
         {movie.release_date && (
-          <p className="text-xs text-muted-foreground mt-0.5">{movie.release_date?.slice(0, 4)}</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {movie.release_date?.slice(0, 4)}
+          </p>
         )}
       </div>
     </Link>
@@ -146,28 +169,48 @@ export function MovieCard({
 interface MovieRowProps {
   title: string;
   movies: Movie[];
-  variant?: 'poster' | 'backdrop';
+  variant?: "poster" | "backdrop";
   showLeaving?: boolean;
   leavingData?: Record<number, number>;
 }
 
-export function MovieRow({ title, movies, variant = 'poster', showLeaving = false, leavingData }: MovieRowProps) {
+export function MovieRow({
+  title,
+  movies,
+  variant = "poster",
+  showLeaving = false,
+  leavingData,
+}: MovieRowProps) {
   if (!movies.length) return null;
 
   return (
     <section className="mb-8">
-      <h2 className="text-lg font-bold text-foreground mb-3 px-4 lg:px-6">{title}</h2>
+      <h2 className="text-lg font-bold text-foreground mb-3 px-4 lg:px-6">
+        {title}
+      </h2>
       <div className="flex gap-3 overflow-x-auto scrollbar-hide px-4 lg:px-6 pb-2">
-        {movies.map((movie) => (
-          <div key={movie.id} className={cn(variant === 'poster' ? 'w-[140px] lg:w-[160px]' : 'w-[280px] lg:w-[320px]', 'flex-shrink-0')}>
-            <MovieCard
-              movie={movie}
-              variant={variant}
-              showLeaving={showLeaving}
-              leavingDays={leavingData?.[movie.id]}
-            />
-          </div>
-        ))}
+        {movies.map((movie) => {
+          // console.log("movie id >> ", movie.tmdb_id);
+
+          return (
+            <div
+              key={movie.id}
+              className={cn(
+                variant === "poster"
+                  ? "w-[140px] lg:w-[160px]"
+                  : "w-[280px] lg:w-[320px]",
+                "flex-shrink-0",
+              )}
+            >
+              <MovieCard
+                movie={movie}
+                variant={variant}
+                showLeaving={showLeaving}
+                leavingDays={leavingData?.[movie.id]}
+              />
+            </div>
+          );
+        })}
       </div>
     </section>
   );
