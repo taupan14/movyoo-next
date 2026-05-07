@@ -11,11 +11,15 @@ const supabase = createClient(
 const TMDB_API_KEY = Deno.env.get("TMDB_API_KEY")!;
 
 // ─── CONFIG ────────────────────────────────────────────────────────────────
-const BATCH_SIZE = 5; // movies processed concurrently per batch
-const MOVIES_PER_SOURCE = 20; // max movies per trending/popular/etc source
-const DISCOVER_PAGES = 2; // 2 pages × ~44s = ~88s, aman di bawah limit 150s
+const BATCH_SIZE = 5;
+const MOVIES_PER_SOURCE = 20;
+const DISCOVER_PAGES = 2;
 const RETRY_LIMIT = 3;
 const RETRY_DELAY_MS = 500;
+
+// Region yang di-sync untuk movie_categories ranking.
+// Tambah entry di sini bila ingin support negara lain.
+const SYNC_REGION = "ID";
 
 // ─── HELPERS ───────────────────────────────────────────────────────────────
 
@@ -58,14 +62,16 @@ async function getPlatformMap(): Promise<Record<number, any>> {
 async function runInBatches<T>(
   items: T[],
   size: number,
-  fn: (item: T) => Promise<void>,
+  fn: (item: T, index: number) => Promise<void>,
 ): Promise<{ succeeded: number; failed: number }> {
   let succeeded = 0;
   let failed = 0;
 
   for (let i = 0; i < items.length; i += size) {
     const batch = items.slice(i, i + size);
-    const results = await Promise.allSettled(batch.map(fn));
+    const results = await Promise.allSettled(
+      batch.map((item, j) => fn(item, i + j)),
+    );
     results.forEach((r) => {
       if (r.status === "fulfilled") succeeded++;
       else {
@@ -81,11 +87,20 @@ async function runInBatches<T>(
 
 // ─── SYNC SINGLE MOVIE ─────────────────────────────────────────────────────
 
-async function syncMovie(movie: any, platformMap: any): Promise<void> {
+async function syncMovie(
+  movie: any,
+  platformMap: any,
+  category?: string,
+  sortOrder?: number,
+): Promise<void> {
   const tmdbId = movie.id;
 
-  const [detail, videos, credits, providers] = await Promise.all([
+  // Fetch detail dalam dua bahasa sekaligus.
+  // overview (id-ID) -> kolom `overview` (Bahasa Indonesia)
+  // overview (en-US) -> kolom `overview_en` (Bahasa Inggris)
+  const [detailId, detailEn, videos, credits, providers] = await Promise.all([
     tmdbFetch(`/movie/${tmdbId}`, { language: "id-ID" }),
+    tmdbFetch(`/movie/${tmdbId}`, { language: "en-US" }),
     tmdbFetch(`/movie/${tmdbId}/videos`),
     tmdbFetch(`/movie/${tmdbId}/credits`),
     tmdbFetch(`/movie/${tmdbId}/watch/providers`),
@@ -96,125 +111,148 @@ async function syncMovie(movie: any, platformMap: any): Promise<void> {
   );
 
   // ── UPSERT MOVIE ──
+  // Data non-linguistik diambil dari en-US (lebih lengkap).
+  // overview disimpan dalam dua kolom terpisah — tidak ada duplikasi row.
   const { data: movieRow, error: movieErr } = await supabase
     .from("movies")
     .upsert(
       {
         tmdb_id: tmdbId,
-        title: detail.title,
-        original_title: detail.original_title,
-        overview: detail.overview,
-        tagline: detail.tagline,
-        vote_average: detail.vote_average,
-        vote_count: detail.vote_count,
-        popularity: detail.popularity,
-        status: detail.status,
-        original_language: detail.original_language,
-        poster_path: detail.poster_path,
-        backdrop_path: detail.backdrop_path,
-        release_date: detail.release_date || null,
-        runtime: detail.runtime,
-        budget: detail.budget,
-        revenue: detail.revenue,
+        title: detailEn.title,
+        original_title: detailEn.original_title,
+        overview: detailId.overview ?? null, // Bahasa Indonesia
+        overview_en: detailEn.overview ?? null, // Bahasa Inggris
+        tagline: detailEn.tagline ?? null,
+        vote_average: detailEn.vote_average,
+        vote_count: detailEn.vote_count,
+        popularity: detailEn.popularity,
+        status: detailEn.status,
+        original_language: detailEn.original_language,
+        poster_path: detailEn.poster_path,
+        backdrop_path: detailEn.backdrop_path,
+        release_date: detailEn.release_date || null,
+        runtime: detailEn.runtime,
+        budget: detailEn.budget,
+        revenue: detailEn.revenue,
         trailer_key: trailer?.key ?? null,
         synced_at: new Date().toISOString(),
       },
       { onConflict: "tmdb_id" },
     )
-    .select()
+    .select("id")
     .single();
 
   if (movieErr)
     throw new Error(`Movie upsert failed [${tmdbId}]: ${movieErr.message}`);
+
   const movieId = movieRow.id;
 
-  // ── GENRES ──
-  if (detail.genres?.length) {
-    for (const g of detail.genres) {
-      const { data: genreRow, error: genreErr } = await supabase
-        .from("genres")
-        .upsert(
-          {
-            tmdb_genre_id: g.id,
-            name: g.name,
-            slug: g.name.toLowerCase().replace(/\s+/g, "-"),
-          },
-          { onConflict: "tmdb_genre_id" },
-        )
-        .select()
-        .single();
+  // ── MOVIE CATEGORIES ──
+  // PK: (movie_id, category, region) — satu film bisa masuk banyak kategori.
+  // sort_order = posisi ranking dari list TMDB (0 = teratas).
+  if (category !== undefined && sortOrder !== undefined) {
+    const { error: catErr } = await supabase.from("movie_categories").upsert(
+      {
+        movie_id: movieId,
+        category,
+        region: SYNC_REGION,
+        sort_order: sortOrder,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "movie_id,category,region" },
+    );
 
-      if (genreErr) {
-        console.error(`Genre upsert failed [${g.name}]:`, genreErr.message);
-        continue;
-      }
-
-      await supabase
-        .from("movie_genres")
-        .upsert(
-          { movie_id: movieId, genre_id: genreRow.id },
-          { onConflict: "movie_id,genre_id" },
-        );
+    if (catErr) {
+      console.error(
+        `movie_categories upsert failed [tmdb:${tmdbId}, cat:${category}]:`,
+        catErr.message,
+      );
     }
+  }
+
+  // ── GENRES ──
+  for (const g of detailEn.genres ?? []) {
+    const { data: genreRow, error: genreErr } = await supabase
+      .from("genres")
+      .upsert(
+        {
+          tmdb_genre_id: g.id,
+          name: g.name,
+          slug: g.name.toLowerCase().replace(/\s+/g, "-"),
+        },
+        { onConflict: "tmdb_genre_id" },
+      )
+      .select("id")
+      .single();
+
+    if (genreErr) {
+      console.error(`Genre upsert failed [${g.name}]:`, genreErr.message);
+      continue;
+    }
+
+    await supabase
+      .from("movie_genres")
+      .upsert(
+        { movie_id: movieId, genre_id: genreRow.id },
+        { onConflict: "movie_id,genre_id" },
+      );
   }
 
   // ── PRODUCTION COMPANIES ──
-  if (detail.production_companies?.length) {
-    for (const c of detail.production_companies) {
-      const { data: companyRow, error: compErr } = await supabase
-        .from("production_companies")
-        .upsert(
-          {
-            tmdb_company_id: c.id,
-            name: c.name,
-            logo_path: c.logo_path ?? null,
-            origin_country: c.origin_country ?? null,
-          },
-          { onConflict: "tmdb_company_id" },
-        )
-        .select()
-        .single();
+  for (const c of detailEn.production_companies ?? []) {
+    const { data: companyRow, error: compErr } = await supabase
+      .from("production_companies")
+      .upsert(
+        {
+          tmdb_company_id: c.id,
+          name: c.name,
+          logo_path: c.logo_path ?? null,
+          origin_country: c.origin_country ?? null,
+        },
+        { onConflict: "tmdb_company_id" },
+      )
+      .select("id")
+      .single();
 
-      if (compErr) {
-        console.error(`Company upsert failed [${c.name}]:`, compErr.message);
-        continue;
-      }
-
-      await supabase
-        .from("movie_companies")
-        .upsert(
-          { movie_id: movieId, company_id: companyRow.id },
-          { onConflict: "movie_id,company_id" },
-        );
+    if (compErr) {
+      console.error(`Company upsert failed [${c.name}]:`, compErr.message);
+      continue;
     }
+
+    await supabase
+      .from("movie_companies")
+      .upsert(
+        { movie_id: movieId, company_id: companyRow.id },
+        { onConflict: "movie_id,company_id" },
+      );
   }
 
   // ── PRODUCTION COUNTRIES ──
-  if (detail.production_countries?.length) {
-    const rows = detail.production_countries.map((c: any) => ({
-      movie_id: movieId,
-      iso_3166_1: c.iso_3166_1,
-      name: c.name,
-    }));
-    await supabase
-      .from("movie_countries")
-      .upsert(rows, { onConflict: "movie_id,iso_3166_1" });
+  if (detailEn.production_countries?.length) {
+    await supabase.from("movie_countries").upsert(
+      detailEn.production_countries.map((c: any) => ({
+        movie_id: movieId,
+        iso_3166_1: c.iso_3166_1,
+        name: c.name,
+      })),
+      { onConflict: "movie_id,iso_3166_1" },
+    );
   }
 
   // ── SPOKEN LANGUAGES ──
-  if (detail.spoken_languages?.length) {
-    const rows = detail.spoken_languages.map((l: any) => ({
-      movie_id: movieId,
-      iso_639_1: l.iso_639_1,
-      name: l.name,
-      english_name: l.english_name ?? null,
-    }));
-    await supabase
-      .from("movie_languages")
-      .upsert(rows, { onConflict: "movie_id,iso_639_1" });
+  if (detailEn.spoken_languages?.length) {
+    await supabase.from("movie_languages").upsert(
+      detailEn.spoken_languages.map((l: any) => ({
+        movie_id: movieId,
+        iso_639_1: l.iso_639_1,
+        name: l.name,
+        english_name: l.english_name ?? null,
+      })),
+      { onConflict: "movie_id,iso_639_1" },
+    );
   }
 
-  // ── PLATFORMS (ID region) ──
+  // ── PLATFORMS (region ID) ──
   const flatrate = providers.results?.["ID"]?.flatrate ?? [];
   for (const p of flatrate) {
     const platform = platformMap[p.provider_id];
@@ -231,15 +269,14 @@ async function syncMovie(movie: any, platformMap: any): Promise<void> {
   }
 
   // ── CAST (top 10) ──
-  const cast = credits.cast?.slice(0, 10) ?? [];
-  for (const c of cast) {
+  for (const c of credits.cast?.slice(0, 10) ?? []) {
     await supabase.from("movie_cast").upsert(
       {
         movie_id: movieId,
         person_id: c.id,
         name: c.name,
-        character: c.character,
-        profile_path: c.profile_path,
+        character: c.character ?? null,
+        profile_path: c.profile_path ?? null,
         order_index: c.order,
       },
       { onConflict: "movie_id,person_id" },
@@ -254,10 +291,9 @@ async function syncMovie(movie: any, platformMap: any): Promise<void> {
     "Producer",
     "Executive Producer",
   ];
-  const crew = (credits.crew ?? []).filter((c: any) =>
+  for (const c of (credits.crew ?? []).filter((c: any) =>
     CREW_JOBS.includes(c.job),
-  );
-  for (const c of crew) {
+  )) {
     await supabase.from("movie_crew").upsert(
       {
         movie_id: movieId,
@@ -273,9 +309,6 @@ async function syncMovie(movie: any, platformMap: any): Promise<void> {
 }
 
 // ─── DISCOVER SYNC ─────────────────────────────────────────────────────────
-// Stateful: simpan halaman terakhir di sync_state, tiap run lanjut dari situ.
-// DISCOVER_PAGES=2 → ~88s per run, aman di bawah limit 150s Supabase.
-// Dengan cron tiap 4 jam → 12 run/hari × 40 film = 480 film/hari.
 
 async function syncDiscover(
   platformMap: any,
@@ -313,6 +346,7 @@ async function syncDiscover(
       break;
     }
 
+    // Discover = bank data saja, tidak masuk kategori spesifik
     const { succeeded, failed } = await runInBatches(
       data.results,
       BATCH_SIZE,
@@ -322,24 +356,19 @@ async function syncDiscover(
     totalSucceeded += succeeded;
     totalFailed += failed;
     lastCompletedPage = page;
-
     console.log(
       `[discover] Page ${page}/${data.total_pages}: ${succeeded} ok, ${failed} failed`,
     );
 
-    // Reset ke halaman 1 kalau sudah habis semua
     if (page >= data.total_pages) {
       lastCompletedPage = 0;
-      console.log(
-        `[discover] Reached last page (${data.total_pages}), will reset to page 1 next run.`,
-      );
+      console.log(`[discover] Reached last page, reset to page 1 on next run.`);
       break;
     }
 
     await sleep(300);
   }
 
-  // Simpan progress
   await supabase.from("sync_state").upsert(
     {
       key: "discover_last_page",
@@ -358,11 +387,12 @@ serve(async (req) => {
   const url = new URL(req.url);
   const sourceParam = url.searchParams.get("source");
 
-  const CURATED_SOURCES: Record<string, string> = {
-    trending: "/trending/movie/day",
-    popular: "/movie/popular",
-    top_rated: "/movie/top_rated",
-    upcoming: "/movie/upcoming",
+  const CURATED_SOURCES: Record<string, { path: string; category: string }> = {
+    trending: { path: "/trending/movie/day", category: "trending" },
+    popular: { path: "/movie/popular", category: "popular" },
+    top_rated: { path: "/movie/top_rated", category: "top_rated" },
+    upcoming: { path: "/movie/upcoming", category: "upcoming" },
+    now_playing: { path: "/movie/now_playing", category: "now_playing" },
   };
 
   const ALL_SOURCE_KEYS = [...Object.keys(CURATED_SOURCES), "discover"];
@@ -376,6 +406,7 @@ serve(async (req) => {
     );
   }
 
+  // sync_logs.id adalah TEXT (UUID) setelah migration — tidak lagi serial integer
   const logId = crypto.randomUUID();
   const syncType = sourceParam ?? "daily";
 
@@ -388,7 +419,6 @@ serve(async (req) => {
     });
 
     const platformMap = await getPlatformMap();
-
     let totalSucceeded = 0;
     let totalFailed = 0;
 
@@ -401,24 +431,27 @@ serve(async (req) => {
         ? { [sourceParam]: CURATED_SOURCES[sourceParam] }
         : CURATED_SOURCES;
 
-      for (const [name, path] of Object.entries(sourcesToRun)) {
-        console.log(`[sync] Starting source: ${name}`);
+      for (const [name, { path, category }] of Object.entries(sourcesToRun)) {
+        console.log(`[sync] source: ${name} -> category: ${category}`);
 
         let sourceData: any;
         try {
-          sourceData = await tmdbFetch(path);
+          // Pass region ke TMDB supaya hasil now_playing/upcoming relevan
+          sourceData = await tmdbFetch(path, { region: SYNC_REGION });
         } catch (err) {
-          console.error(`[sync] Failed to fetch source ${name}:`, err.message);
+          console.error(`[sync] Failed to fetch ${name}:`, err.message);
           totalFailed += MOVIES_PER_SOURCE;
           continue;
         }
 
         const movies: any[] =
           sourceData.results?.slice(0, MOVIES_PER_SOURCE) ?? [];
+
+        // index dari runInBatches dipakai langsung sebagai sort_order (0 = rank #1)
         const { succeeded, failed } = await runInBatches(
           movies,
           BATCH_SIZE,
-          (movie) => syncMovie(movie, platformMap),
+          (movie, index) => syncMovie(movie, platformMap, category, index),
         );
 
         totalSucceeded += succeeded;
@@ -449,7 +482,6 @@ serve(async (req) => {
     );
   } catch (err) {
     console.error("[sync] Fatal error:", err.message);
-
     await supabase.from("sync_logs").upsert({
       id: logId,
       sync_type: syncType,
@@ -457,7 +489,6 @@ serve(async (req) => {
       error_message: err.message,
       finished_at: new Date().toISOString(),
     });
-
     return new Response(JSON.stringify({ error: err.message }), {
       status: 500,
       headers: { "Content-Type": "application/json" },

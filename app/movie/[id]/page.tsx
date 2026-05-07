@@ -1,24 +1,43 @@
-'use client';
+"use client";
 
-import { useEffect, useState, useCallback } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import { useI18n } from '@/hooks/use-locale';
+import { useEffect, useState, useCallback } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { useI18n } from "@/hooks/use-locale";
 import {
-  fetchMovieDetail,
-  fetchRecommendations,
   getPosterUrl,
   getBackdropUrl,
   getLogoUrl,
   getProfileUrl,
-} from '@/lib/tmdb';
-import { MovieCard } from '@/components/movie-card';
-import { SectionHeader } from '@/components/section-header';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { cn } from '@/lib/utils';
-import { Star, Clock, Calendar, Heart, Bell, BellRing, ChevronLeft, Play, Ticket, Tv, ShoppingCart, Zap, Eye, TrendingUp, MessageCircle, CircleCheck as CheckCircle2, Circle as XCircle, Sparkles, Gauge, Film } from 'lucide-react';
+} from "@/lib/tmdb"; // hanya URL helpers, tidak ada fetch TMDB
+import { MovieCard } from "@/components/movie-card";
+import { SectionHeader } from "@/components/section-header";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { cn } from "@/lib/utils";
+import {
+  Star,
+  Clock,
+  Calendar,
+  Heart,
+  Bell,
+  BellRing,
+  ChevronLeft,
+  Play,
+  Ticket,
+  Tv,
+  ShoppingCart,
+  Zap,
+  Eye,
+  TrendingUp,
+  MessageCircle,
+  CircleCheck as CheckCircle2,
+  Circle as XCircle,
+  Sparkles,
+  Gauge,
+  Film,
+} from "lucide-react";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -41,15 +60,8 @@ interface DisplayProvider {
   provider_id: number;
   provider_name: string;
   logo_path: string | null;
-  status: 'now' | 'coming' | 'leaving';
+  status: "now" | "coming" | "leaving";
   leavingDays?: number;
-}
-
-interface DisplayRentBuyItem {
-  name: string;
-  logo_path: string | null;
-  type: 'rent' | 'buy';
-  price: string;
 }
 
 interface Provider {
@@ -74,7 +86,6 @@ interface MovieData {
   title: string;
   tagline: string;
   overview: string;
-  overview_id?: string;
   poster_path: string | null;
   backdrop_path: string | null;
   vote_average: number;
@@ -83,12 +94,14 @@ interface MovieData {
   genres: Genre[];
   release_date: string;
   popularity: number;
+  budget: number;
+  revenue: number;
   credits?: { cast?: CastMember[] };
-  'watch/providers'?: WatchProviders;
+  "watch/providers"?: WatchProviders;
   similar?: { results?: MovieData[] };
   mood_tags?: string[];
-  pace?: 'slow' | 'medium' | 'fast';
-  worth_it?: 'yes' | 'skip' | 'fan';
+  pace?: "slow" | "medium" | "fast";
+  worth_it?: "yes" | "skip" | "fan";
 }
 
 interface RecommendationMovie {
@@ -107,11 +120,11 @@ interface RecommendationMovie {
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
 
-const WATCHLIST_KEY = 'movyoo-watchlist';
-const REMINDERS_KEY = 'movyoo-reminders';
+const WATCHLIST_KEY = "movyoo-watchlist";
+const REMINDERS_KEY = "movyoo-reminders";
 
 function getStoredList(key: string): number[] {
-  if (typeof window === 'undefined') return [];
+  if (typeof window === "undefined") return [];
   try {
     const raw = localStorage.getItem(key);
     return raw ? JSON.parse(raw) : [];
@@ -129,19 +142,19 @@ function setStoredList(key: string, ids: number[]) {
 }
 
 function formatRuntime(mins: number): string {
-  if (!mins) return '--';
+  if (!mins) return "--";
   const h = Math.floor(mins / 60);
   const m = mins % 60;
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
 function formatReleaseDate(date: string): string {
-  if (!date) return '--';
+  if (!date) return "--";
   try {
-    return new Date(date).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
+    return new Date(date).toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
     });
   } catch {
     return date;
@@ -149,11 +162,68 @@ function formatReleaseDate(date: string): string {
 }
 
 const INDONESIA_CINEMAS = [
-  { name: 'Cinema XXI', cities: ['Jakarta', 'Bandung', 'Surabaya', 'Medan', 'Semarang', 'Makassar', 'Yogyakarta', 'Bali', 'Malang', 'Palembang', 'Tangerang', 'Bekasi', 'Bogor', 'Depok'], status: 'now' as const },
-  { name: 'CGV', cities: ['Jakarta', 'Bandung', 'Surabaya', 'Tangerang', 'Yogyakarta', 'Bekasi', 'Cirebon', 'Karawang', 'Palembang', 'Batam', 'Balikpapan', 'Makassar', 'Malang'], status: 'now' as const },
-  { name: 'Cinépolis', cities: ['Jakarta', 'Bandung', 'Surabaya', 'Semarang', 'Medan', 'Makassar', 'Palembang'], status: 'now' as const },
-  { name: 'IMAX', cities: ['Jakarta', 'Bandung', 'Surabaya', 'Tangerang'], status: 'now' as const },
-  { name: 'The Premiere', cities: ['Jakarta', 'Bandung', 'Surabaya'], status: 'now' as const },
+  {
+    name: "Cinema XXI",
+    cities: [
+      "Jakarta",
+      "Bandung",
+      "Surabaya",
+      "Medan",
+      "Semarang",
+      "Makassar",
+      "Yogyakarta",
+      "Bali",
+      "Malang",
+      "Palembang",
+      "Tangerang",
+      "Bekasi",
+      "Bogor",
+      "Depok",
+    ],
+    status: "now" as const,
+  },
+  {
+    name: "CGV",
+    cities: [
+      "Jakarta",
+      "Bandung",
+      "Surabaya",
+      "Tangerang",
+      "Yogyakarta",
+      "Bekasi",
+      "Cirebon",
+      "Karawang",
+      "Palembang",
+      "Batam",
+      "Balikpapan",
+      "Makassar",
+      "Malang",
+    ],
+    status: "now" as const,
+  },
+  {
+    name: "Cinépolis",
+    cities: [
+      "Jakarta",
+      "Bandung",
+      "Surabaya",
+      "Semarang",
+      "Medan",
+      "Makassar",
+      "Palembang",
+    ],
+    status: "now" as const,
+  },
+  {
+    name: "IMAX",
+    cities: ["Jakarta", "Bandung", "Surabaya", "Tangerang"],
+    status: "now" as const,
+  },
+  {
+    name: "The Premiere",
+    cities: ["Jakarta", "Bandung", "Surabaya"],
+    status: "now" as const,
+  },
 ];
 
 function computeScores(movie: MovieData) {
@@ -163,7 +233,7 @@ function computeScores(movie: MovieData) {
     : Math.round(Math.random() * 30 + 40);
   const buzz = Math.min(
     Math.round((movie.vote_average || 0) * 10 + (movie.popularity || 0) / 5),
-    100
+    100,
   );
   return { popularity, completion, buzz };
 }
@@ -180,7 +250,9 @@ export default function MovieDetailPage() {
   const movieId = Number(params.id);
 
   const [movie, setMovie] = useState<MovieData | null>(null);
-  const [recommendations, setRecommendations] = useState<RecommendationMovie[]>([]);
+  const [recommendations, setRecommendations] = useState<RecommendationMovie[]>(
+    [],
+  );
   const [loading, setLoading] = useState(true);
 
   const [inWatchlist, setInWatchlist] = useState(false);
@@ -195,19 +267,21 @@ export default function MovieDetailPage() {
 
     async function load() {
       try {
-        const lang = locale === 'id' ? 'id' : 'en';
-        const [detail, recs] = await Promise.allSettled([
-          fetchMovieDetail(movieId, lang, region),
-          fetchRecommendations(movieId, lang, region),
-        ]);
+        const lang = locale === "id" ? "id" : "en";
+        const params = new URLSearchParams({ lang, region });
+
+        const res = await fetch(`/api/movies/${movieId}?${params}`);
+        if (!res.ok) throw new Error(`API error: ${res.status}`);
+
+        const json = await res.json();
 
         if (cancelled) return;
 
-        if (detail.status === 'fulfilled') setMovie(detail.value as MovieData);
-        if (recs.status === 'fulfilled')
-          setRecommendations((recs.value as { results?: RecommendationMovie[] }).results?.slice(0, 12) || []);
+        if (json.movie) setMovie(json.movie as MovieData);
+        if (json.recommendations)
+          setRecommendations(json.recommendations as RecommendationMovie[]);
       } catch (err) {
-        console.error('Failed to load movie', err);
+        console.error("Failed to load movie", err);
       }
       setLoading(false);
     }
@@ -251,32 +325,34 @@ export default function MovieDetailPage() {
   }, [reminderActive, movieId]);
 
   /* Derived data */
-  const scores = movie ? computeScores(movie) : { popularity: 0, completion: 0, buzz: 0 };
-  const displayOverview =
-    locale === 'id' && movie?.overview_id ? movie.overview_id : movie?.overview;
+  const scores = movie
+    ? computeScores(movie)
+    : { popularity: 0, completion: 0, buzz: 0 };
+  // overview sudah dipilih sesuai lang di server (overview / overview_en + fallback)
+  const displayOverview = movie?.overview;
 
-  /* Watch providers from API */
+  // Deteksi status tayang berdasarkan status TMDB + release_date
+  const today = new Date();
+  const releaseDate = movie?.release_date ? new Date(movie.release_date) : null;
+  const isUpcoming = releaseDate ? releaseDate > today : false;
+  const isNowPlaying =
+    movie?.status === "Released" && releaseDate
+      ? releaseDate <= today &&
+        (today.getTime() - releaseDate.getTime()) / (1000 * 60 * 60 * 24) <= 90
+      : false;
+
+  /* Watch providers — dari Supabase via API route */
   const countryProviders: ProviderResult | undefined =
-    movie?.['watch/providers']?.results?.[region] ||
-    movie?.['watch/providers']?.results?.['ID'] ||
-    movie?.['watch/providers']?.results?.['US'];
+    movie?.["watch/providers"]?.results?.[region] ||
+    movie?.["watch/providers"]?.results?.["ID"];
 
   const apiFlatrate = countryProviders?.flatrate || [];
-  const apiRent = countryProviders?.rent || [];
-  const apiBuy = countryProviders?.buy || [];
 
-  const displayOTT: DisplayProvider[] =
-    apiFlatrate.length > 0
-      ? apiFlatrate.map((p) => ({ ...p, provider_name: p.provider_name, status: 'now' as const }))
-      : [];
-
-  const displayRentBuy: DisplayRentBuyItem[] =
-    apiRent.length > 0 || apiBuy.length > 0
-      ? [
-          ...apiRent.map((p) => ({ name: p.provider_name, logo_path: p.logo_path, type: 'rent' as const, price: locale === 'id' ? 'Sewa' : 'Rent' })),
-          ...apiBuy.map((p) => ({ name: p.provider_name, logo_path: p.logo_path, type: 'buy' as const, price: locale === 'id' ? 'Beli' : 'Buy' })),
-        ]
-      : [];
+  const displayOTT: DisplayProvider[] = apiFlatrate.map((p) => ({
+    ...p,
+    provider_name: p.provider_name,
+    status: "now" as const,
+  }));
 
   /* ---------------------------------------------------------------- */
   /*  Loading skeleton                                                 */
@@ -327,7 +403,7 @@ export default function MovieDetailPage() {
           className="absolute top-16 lg:top-4 left-4 z-20 flex items-center gap-1.5 px-3 py-2 rounded-full glass text-white text-sm font-medium hover:bg-white/20 transition-colors"
         >
           <ChevronLeft className="w-4 h-4" />
-          {locale === 'id' ? 'Kembali' : 'Back'}
+          {locale === "id" ? "Kembali" : "Back"}
         </button>
 
         {/* Hero content */}
@@ -396,16 +472,19 @@ export default function MovieDetailPage() {
                   size="lg"
                   onClick={toggleWatchlist}
                   className={cn(
-                    'rounded-xl font-semibold transition-all duration-300',
+                    "rounded-xl font-semibold transition-all duration-300",
                     inWatchlist
-                      ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/30'
-                      : 'gradient-primary text-white hover:opacity-90'
+                      ? "bg-primary text-primary-foreground shadow-lg shadow-primary/30"
+                      : "gradient-primary text-white hover:opacity-90",
                   )}
                 >
                   <Heart
-                    className={cn('w-4 h-4 mr-2', inWatchlist && 'fill-current')}
+                    className={cn(
+                      "w-4 h-4 mr-2",
+                      inWatchlist && "fill-current",
+                    )}
                   />
-                  {inWatchlist ? t('in_watchlist') : t('add_to_watchlist')}
+                  {inWatchlist ? t("in_watchlist") : t("add_to_watchlist")}
                 </Button>
 
                 <Button
@@ -413,10 +492,10 @@ export default function MovieDetailPage() {
                   variant="outline"
                   onClick={toggleReminder}
                   className={cn(
-                    'rounded-xl font-semibold border-white/20 transition-all duration-300',
+                    "rounded-xl font-semibold border-white/20 transition-all duration-300",
                     reminderActive
-                      ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/40'
-                      : 'text-white hover:bg-white/10'
+                      ? "bg-yellow-500/20 text-yellow-400 border-yellow-500/40"
+                      : "text-white hover:bg-white/10",
                   )}
                 >
                   {reminderActive ? (
@@ -424,7 +503,7 @@ export default function MovieDetailPage() {
                   ) : (
                     <Bell className="w-4 h-4 mr-2" />
                   )}
-                  {reminderActive ? t('reminder_set') : t('set_reminder')}
+                  {reminderActive ? t("reminder_set") : t("set_reminder")}
                 </Button>
               </div>
             </div>
@@ -436,7 +515,6 @@ export default function MovieDetailPage() {
       {/*  Content area                                                 */}
       {/* ============================================================ */}
       <div className="px-4 lg:px-8 max-w-5xl mx-auto -mt-2 relative z-10 space-y-8 pb-16">
-
         {/* Mobile poster row (poster only visible on small screens) */}
         <div className="sm:hidden flex gap-4 animate-slide-up">
           <div className="w-[110px] flex-shrink-0 rounded-xl overflow-hidden shadow-xl shadow-black/40 hover-lift">
@@ -450,7 +528,9 @@ export default function MovieDetailPage() {
           </div>
           <div className="flex-1 min-w-0 space-y-2">
             {movie.tagline && (
-              <p className="text-primary/90 text-sm italic">&ldquo;{movie.tagline}&rdquo;</p>
+              <p className="text-primary/90 text-sm italic">
+                &ldquo;{movie.tagline}&rdquo;
+              </p>
             )}
             <div className="flex flex-wrap gap-2">
               {movie.genres.map((g) => (
@@ -468,24 +548,26 @@ export default function MovieDetailPage() {
                 size="sm"
                 onClick={toggleWatchlist}
                 className={cn(
-                  'rounded-lg text-xs',
+                  "rounded-lg text-xs",
                   inWatchlist
-                    ? 'bg-primary text-primary-foreground'
-                    : 'gradient-primary text-white'
+                    ? "bg-primary text-primary-foreground"
+                    : "gradient-primary text-white",
                 )}
               >
-                <Heart className={cn('w-3 h-3 mr-1', inWatchlist && 'fill-current')} />
-                {inWatchlist ? t('in_watchlist') : t('add_to_watchlist')}
+                <Heart
+                  className={cn("w-3 h-3 mr-1", inWatchlist && "fill-current")}
+                />
+                {inWatchlist ? t("in_watchlist") : t("add_to_watchlist")}
               </Button>
               <Button
                 size="sm"
                 variant="outline"
                 onClick={toggleReminder}
                 className={cn(
-                  'rounded-lg text-xs border-white/20',
+                  "rounded-lg text-xs border-white/20",
                   reminderActive
-                    ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/40'
-                    : 'text-white'
+                    ? "bg-yellow-500/20 text-yellow-400 border-yellow-500/40"
+                    : "text-white",
                 )}
               >
                 {reminderActive ? (
@@ -493,7 +575,7 @@ export default function MovieDetailPage() {
                 ) : (
                   <Bell className="w-3 h-3 mr-1" />
                 )}
-                {reminderActive ? t('reminder_set') : t('set_reminder')}
+                {reminderActive ? t("reminder_set") : t("set_reminder")}
               </Button>
             </div>
           </div>
@@ -503,66 +585,90 @@ export default function MovieDetailPage() {
         {/*  2. WHERE TO WATCH                                            */}
         {/* ============================================================ */}
         <section className="glass rounded-2xl p-5 lg:p-6 animate-slide-up">
-          <h2 className="text-lg font-bold text-gradient mb-4">{t('where_to_watch')}</h2>
+          <h2 className="text-lg font-bold text-gradient mb-4">
+            {t("where_to_watch")}
+          </h2>
 
           <Tabs defaultValue="cinema" className="w-full">
-            <TabsList className="w-full grid grid-cols-3 bg-white/5 h-auto p-1 rounded-xl gap-1">
+            <TabsList className="w-full grid grid-cols-2 bg-white/5 h-auto p-1 rounded-xl gap-1">
               <TabsTrigger
                 value="cinema"
                 className="rounded-lg text-xs data-[state=active]:gradient-primary data-[state=active]:text-white data-[state=active]:shadow-md"
               >
                 <Ticket className="w-3.5 h-3.5 mr-1.5" />
-                {t('cinema')}
+                {t("cinema")}
               </TabsTrigger>
               <TabsTrigger
                 value="ott"
                 className="rounded-lg text-xs data-[state=active]:gradient-primary data-[state=active]:text-white data-[state=active]:shadow-md"
               >
                 <Tv className="w-3.5 h-3.5 mr-1.5" />
-                {t('ott')}
-              </TabsTrigger>
-              <TabsTrigger
-                value="rentbuy"
-                className="rounded-lg text-xs data-[state=active]:gradient-primary data-[state=active]:text-white data-[state=active]:shadow-md"
-              >
-                <ShoppingCart className="w-3.5 h-3.5 mr-1.5" />
-                {t('rent_buy')}
+                {t("ott")}
               </TabsTrigger>
             </TabsList>
 
             {/* Cinema tab */}
             <TabsContent value="cinema" className="mt-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {INDONESIA_CINEMAS.map((c) => (
-                  <div
-                    key={c.name}
-                    className="flex items-center gap-3 p-3 rounded-xl bg-white/5 border border-white/10 hover-lift"
-                  >
-                    <div className="w-10 h-10 rounded-lg bg-white/10 flex items-center justify-center flex-shrink-0">
-                      <Film className="w-5 h-5 text-primary" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-foreground truncate">{c.name}</p>
-                      <p className="text-[10px] text-muted-foreground mt-0.5 truncate">
-                        {c.cities.slice(0, 3).join(', ')}{c.cities.length > 3 ? ` +${c.cities.length - 3}` : ''}
-                      </p>
-                      <Badge
-                        className={cn(
-                          'mt-1 text-[10px]',
-                          c.status === 'now'
-                            ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
-                            : 'bg-amber-500/20 text-amber-400 border-amber-500/30'
-                        )}
+              {isNowPlaying ? (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {INDONESIA_CINEMAS.map((c) => (
+                      <div
+                        key={c.name}
+                        className="flex items-center gap-3 p-3 rounded-xl bg-white/5 border border-white/10 hover-lift"
                       >
-                        {c.status === 'now' ? t('platform_status_now') : t('platform_status_coming')}
-                      </Badge>
-                    </div>
+                        <div className="w-10 h-10 rounded-lg bg-white/10 flex items-center justify-center flex-shrink-0">
+                          <Film className="w-5 h-5 text-primary" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-foreground truncate">
+                            {c.name}
+                          </p>
+                          <p className="text-[10px] text-muted-foreground mt-0.5 truncate">
+                            {c.cities.slice(0, 3).join(", ")}
+                            {c.cities.length > 3
+                              ? ` +${c.cities.length - 3}`
+                              : ""}
+                          </p>
+                          <Badge className="mt-1 text-[10px] bg-emerald-500/20 text-emerald-400 border-emerald-500/30">
+                            {t("platform_status_now")}
+                          </Badge>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-              <p className="text-[10px] text-muted-foreground mt-3 text-center">
-                {locale === 'id' ? 'Jadwal bioskop real-time memerlukan integrasi API 21 Cineplex/CGV' : 'Real-time cinema schedules require 21 Cineplex/CGV API integration'}
-              </p>
+                  <p className="text-[10px] text-muted-foreground mt-3 text-center">
+                    {locale === "id"
+                      ? "Jadwal tayang real-time tersedia di aplikasi 21Cineplex & CGV"
+                      : "Real-time showtimes available on 21Cineplex & CGV apps"}
+                  </p>
+                </>
+              ) : isUpcoming ? (
+                <div className="flex flex-col items-center justify-center py-8 animate-fade-in">
+                  <div className="w-16 h-16 rounded-2xl glass-strong flex items-center justify-center mb-3">
+                    <Ticket className="w-8 h-8 text-amber-400/70" />
+                  </div>
+                  <p className="text-sm font-semibold text-amber-400 mb-1">
+                    {locale === "id" ? "Segera Tayang" : "Coming Soon"}
+                  </p>
+                  <p className="text-xs text-muted-foreground text-center">
+                    {locale === "id"
+                      ? `Dijadwalkan tayang ${formatReleaseDate(movie.release_date)}`
+                      : `Scheduled for ${formatReleaseDate(movie.release_date)}`}
+                  </p>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-8 animate-fade-in">
+                  <div className="w-16 h-16 rounded-2xl glass-strong flex items-center justify-center mb-3">
+                    <Film className="w-8 h-8 text-muted-foreground/50" />
+                  </div>
+                  <p className="text-sm text-muted-foreground text-center">
+                    {locale === "id"
+                      ? "Film ini sudah tidak tayang di bioskop"
+                      : "This movie is no longer showing in cinemas"}
+                  </p>
+                </div>
+              )}
             </TabsContent>
 
             {/* OTT tab */}
@@ -573,10 +679,10 @@ export default function MovieDetailPage() {
                     <div
                       key={`${p.provider_id}-${i}`}
                       className={cn(
-                        'relative flex flex-col items-center gap-2 p-3 rounded-xl border hover-lift transition-all',
-                        p.status === 'leaving'
-                          ? 'bg-red-500/5 border-red-500/30'
-                          : 'bg-white/5 border-white/10'
+                        "relative flex flex-col items-center gap-2 p-3 rounded-xl border hover-lift transition-all",
+                        p.status === "leaving"
+                          ? "bg-red-500/5 border-red-500/30"
+                          : "bg-white/5 border-white/10",
                       )}
                     >
                       {p.logo_path ? (
@@ -586,15 +692,16 @@ export default function MovieDetailPage() {
                           className="w-10 h-10 rounded-lg object-contain bg-white/90 p-0.5"
                           onError={(e) => {
                             const target = e.currentTarget;
-                            target.style.display = 'none';
+                            target.style.display = "none";
                             const fallback = target.nextElementSibling;
-                            if (fallback) (fallback as HTMLElement).style.display = 'flex';
+                            if (fallback)
+                              (fallback as HTMLElement).style.display = "flex";
                           }}
                         />
                       ) : null}
                       <div
                         className="w-10 h-10 rounded-lg bg-white/10 flex items-center justify-center"
-                        style={{ display: p.logo_path ? 'none' : 'flex' }}
+                        style={{ display: p.logo_path ? "none" : "flex" }}
                       >
                         <Tv className="w-5 h-5 text-muted-foreground" />
                       </div>
@@ -603,19 +710,19 @@ export default function MovieDetailPage() {
                       </p>
                       <Badge
                         className={cn(
-                          'text-[10px]',
-                          p.status === 'now'
-                            ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
-                            : p.status === 'coming'
-                            ? 'bg-amber-500/20 text-amber-400 border-amber-500/30'
-                            : 'bg-red-500/20 text-red-400 border-red-500/30 animate-pulse-glow'
+                          "text-[10px]",
+                          p.status === "now"
+                            ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
+                            : p.status === "coming"
+                              ? "bg-amber-500/20 text-amber-400 border-amber-500/30"
+                              : "bg-red-500/20 text-red-400 border-red-500/30 animate-pulse-glow",
                         )}
                       >
-                        {p.status === 'now'
-                          ? t('platform_status_now')
-                          : p.status === 'coming'
-                          ? t('platform_status_coming')
-                          : `${t('platform_status_leaving')} ${p.leavingDays ? `${p.leavingDays}d` : ''}`}
+                        {p.status === "now"
+                          ? t("platform_status_now")
+                          : p.status === "coming"
+                            ? t("platform_status_coming")
+                            : `${t("platform_status_leaving")} ${p.leavingDays ? `${p.leavingDays}d` : ""}`}
                       </Badge>
                     </div>
                   ))}
@@ -626,67 +733,9 @@ export default function MovieDetailPage() {
                     <Tv className="w-8 h-8 text-muted-foreground/50" />
                   </div>
                   <p className="text-sm text-muted-foreground text-center">
-                    {locale === 'id'
-                      ? 'Data streaming belum tersedia untuk film ini di Indonesia'
-                      : 'Streaming data not available for this movie in Indonesia'}
-                  </p>
-                </div>
-              )}
-            </TabsContent>
-
-            {/* Rent / Buy tab */}
-            <TabsContent value="rentbuy" className="mt-4">
-              {displayRentBuy.length > 0 ? (
-                <div className="space-y-2">
-                  {displayRentBuy.map((item, i) => (
-                    <div
-                      key={`${item.name}-${item.type}-${i}`}
-                      className="flex items-center gap-3 p-3 rounded-xl bg-white/5 border border-white/10"
-                    >
-                      {item.logo_path ? (
-                        <img
-                          src={getLogoUrl(item.logo_path)}
-                          alt={item.name}
-                          className="w-8 h-8 rounded-lg object-contain bg-white/90 p-0.5"
-                          onError={(e) => {
-                            const target = e.currentTarget;
-                            target.style.display = 'none';
-                            const fallback = target.nextElementSibling;
-                            if (fallback) (fallback as HTMLElement).style.display = 'flex';
-                          }}
-                        />
-                      ) : null}
-                      <div
-                        className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center"
-                        style={{ display: item.logo_path ? 'none' : 'flex' }}
-                      >
-                        <ShoppingCart className="w-4 h-4 text-muted-foreground" />
-                      </div>
-                      <p className="text-sm font-medium text-foreground flex-1">{item.name}</p>
-                      <Badge
-                        variant="outline"
-                        className={cn(
-                          'text-[10px]',
-                          item.type === 'rent'
-                            ? 'text-sky-400 border-sky-500/30'
-                            : 'text-emerald-400 border-emerald-500/30'
-                        )}
-                      >
-                        {item.type === 'rent' ? (locale === 'id' ? 'Sewa' : 'Rent') : (locale === 'id' ? 'Beli' : 'Buy')}
-                      </Badge>
-                      <span className="text-sm font-semibold text-primary">{item.price}</span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center py-8 animate-fade-in">
-                  <div className="w-16 h-16 rounded-2xl glass-strong flex items-center justify-center mb-3">
-                    <ShoppingCart className="w-8 h-8 text-muted-foreground/50" />
-                  </div>
-                  <p className="text-sm text-muted-foreground text-center">
-                    {locale === 'id'
-                      ? 'Data sewa/beli belum tersedia untuk film ini'
-                      : 'Rent/buy data not available for this movie'}
+                    {locale === "id"
+                      ? "Data streaming belum tersedia untuk film ini di Indonesia"
+                      : "Streaming data not available for this movie in Indonesia"}
                   </p>
                 </div>
               )}
@@ -698,7 +747,9 @@ export default function MovieDetailPage() {
         {/*  3. QUICK DECISION CARD                                       */}
         {/* ============================================================ */}
         <section className="glass rounded-2xl p-5 lg:p-6 animate-slide-up">
-          <h2 className="text-lg font-bold text-gradient mb-4">{t('quick_decision')}</h2>
+          <h2 className="text-lg font-bold text-gradient mb-4">
+            {t("quick_decision")}
+          </h2>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {/* Worth It? */}
@@ -710,43 +761,45 @@ export default function MovieDetailPage() {
               <div className="flex gap-2">
                 <Badge
                   className={cn(
-                    'cursor-default text-xs px-3 py-1',
-                    movie.worth_it === 'yes'
-                      ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40 ring-1 ring-emerald-500/40'
-                      : 'bg-white/5 text-white/40 border-white/10'
+                    "cursor-default text-xs px-3 py-1",
+                    movie.worth_it === "yes"
+                      ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40 ring-1 ring-emerald-500/40"
+                      : "bg-white/5 text-white/40 border-white/10",
                   )}
                 >
                   <CheckCircle2 className="w-3 h-3 mr-1" />
-                  {t('worth_it_yes')}
+                  {t("worth_it_yes")}
                 </Badge>
                 <Badge
                   className={cn(
-                    'cursor-default text-xs px-3 py-1',
-                    movie.worth_it === 'skip'
-                      ? 'bg-red-500/20 text-red-400 border-red-500/40 ring-1 ring-red-500/40'
-                      : 'bg-white/5 text-white/40 border-white/10'
+                    "cursor-default text-xs px-3 py-1",
+                    movie.worth_it === "skip"
+                      ? "bg-red-500/20 text-red-400 border-red-500/40 ring-1 ring-red-500/40"
+                      : "bg-white/5 text-white/40 border-white/10",
                   )}
                 >
                   <XCircle className="w-3 h-3 mr-1" />
-                  {t('worth_it_skip')}
+                  {t("worth_it_skip")}
                 </Badge>
                 <Badge
                   className={cn(
-                    'cursor-default text-xs px-3 py-1',
-                    movie.worth_it === 'fan'
-                      ? 'bg-amber-500/20 text-amber-400 border-amber-500/40 ring-1 ring-amber-500/40'
-                      : 'bg-white/5 text-white/40 border-white/10'
+                    "cursor-default text-xs px-3 py-1",
+                    movie.worth_it === "fan"
+                      ? "bg-amber-500/20 text-amber-400 border-amber-500/40 ring-1 ring-amber-500/40"
+                      : "bg-white/5 text-white/40 border-white/10",
                   )}
                 >
                   <Sparkles className="w-3 h-3 mr-1" />
-                  {t('worth_it_fan')}
+                  {t("worth_it_fan")}
                 </Badge>
               </div>
               {/* Default to "yes" if no worth_it field */}
-              {(!movie.worth_it || movie.worth_it === 'yes') && (
+              {(!movie.worth_it || movie.worth_it === "yes") && (
                 <div className="mt-1 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
                   <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                  <span className="text-sm font-semibold text-emerald-400">{t('worth_it_yes')}</span>
+                  <span className="text-sm font-semibold text-emerald-400">
+                    {t("worth_it_yes")}
+                  </span>
                 </div>
               )}
             </div>
@@ -755,21 +808,26 @@ export default function MovieDetailPage() {
             <div className="glass-strong rounded-xl p-4 flex flex-col items-center gap-3">
               <Sparkles className="w-6 h-6 text-primary" />
               <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">
-                {t('nav_mood')}
+                {t("nav_mood")}
               </p>
               <div className="flex flex-wrap justify-center gap-1.5">
-                {(movie.mood_tags || ['Tegang', 'Mikir']).map((mood) => {
-                  const moodKey = `mood_${mood.toLowerCase()}` as keyof typeof t extends (k: infer K) => string ? K : never;
+                {(movie.mood_tags || ["Tegang", "Mikir"]).map((mood) => {
+                  const moodKey =
+                    `mood_${mood.toLowerCase()}` as keyof typeof t extends (
+                      k: infer K,
+                    ) => string
+                      ? K
+                      : never;
                   const label =
-                    locale === 'id'
+                    locale === "id"
                       ? mood
                       : {
-                          ketawa: 'Laugh',
-                          tegang: 'Thrill',
-                          nangis: 'Cry',
-                          santai: 'Chill',
-                          mikir: 'Think',
-                          berat: 'Heavy',
+                          ketawa: "Laugh",
+                          tegang: "Thrill",
+                          nangis: "Cry",
+                          santai: "Chill",
+                          mikir: "Think",
+                          berat: "Heavy",
                         }[mood.toLowerCase()] || mood;
                   return (
                     <Badge
@@ -791,19 +849,25 @@ export default function MovieDetailPage() {
                 Pace
               </p>
               <div className="flex gap-2 items-center">
-                {(['slow', 'medium', 'fast'] as const).map((p) => {
-                  const active = movie.pace === p || (!movie.pace && p === 'medium');
+                {(["slow", "medium", "fast"] as const).map((p) => {
+                  const active =
+                    movie.pace === p || (!movie.pace && p === "medium");
                   return (
                     <Badge
                       key={p}
                       className={cn(
-                        'text-xs px-3 py-1',
+                        "text-xs px-3 py-1",
                         active
-                          ? 'bg-primary/20 text-primary border-primary/40 ring-1 ring-primary/40'
-                          : 'bg-white/5 text-white/40 border-white/10'
+                          ? "bg-primary/20 text-primary border-primary/40 ring-1 ring-primary/40"
+                          : "bg-white/5 text-white/40 border-white/10",
                       )}
                     >
-                      {t(`pace_${p}` as 'pace_slow' | 'pace_medium' | 'pace_fast')}
+                      {t(
+                        `pace_${p}` as
+                          | "pace_slow"
+                          | "pace_medium"
+                          | "pace_fast",
+                      )}
                     </Badge>
                   );
                 })}
@@ -814,13 +878,17 @@ export default function MovieDetailPage() {
                   <div
                     className="h-full rounded-full gradient-primary transition-all duration-700"
                     style={{
-                      width: `${({ slow: 33, medium: 66, fast: 100 }[movie.pace || 'medium'])}%`,
+                      width: `${{ slow: 33, medium: 66, fast: 100 }[movie.pace || "medium"]}%`,
                     }}
                   />
                 </div>
                 <div className="flex justify-between mt-1">
-                  <span className="text-[10px] text-muted-foreground">{t('pace_slow')}</span>
-                  <span className="text-[10px] text-muted-foreground">{t('pace_fast')}</span>
+                  <span className="text-[10px] text-muted-foreground">
+                    {t("pace_slow")}
+                  </span>
+                  <span className="text-[10px] text-muted-foreground">
+                    {t("pace_fast")}
+                  </span>
                 </div>
               </div>
             </div>
@@ -839,9 +907,11 @@ export default function MovieDetailPage() {
               <div className="flex items-center justify-between mb-2">
                 <span className="flex items-center gap-2 text-sm font-medium text-foreground">
                   <TrendingUp className="w-4 h-4 text-primary" />
-                  {t('score_popularity')}
+                  {t("score_popularity")}
                 </span>
-                <span className="text-sm font-bold text-primary">{scores.popularity}%</span>
+                <span className="text-sm font-bold text-primary">
+                  {scores.popularity}%
+                </span>
               </div>
               <div className="h-2.5 rounded-full bg-white/5 overflow-hidden">
                 <div
@@ -856,9 +926,11 @@ export default function MovieDetailPage() {
               <div className="flex items-center justify-between mb-2">
                 <span className="flex items-center gap-2 text-sm font-medium text-foreground">
                   <Eye className="w-4 h-4 text-emerald-400" />
-                  {t('score_completion')}
+                  {t("score_completion")}
                 </span>
-                <span className="text-sm font-bold text-emerald-400">{scores.completion}%</span>
+                <span className="text-sm font-bold text-emerald-400">
+                  {scores.completion}%
+                </span>
               </div>
               <div className="h-2.5 rounded-full bg-white/5 overflow-hidden">
                 <div
@@ -873,9 +945,11 @@ export default function MovieDetailPage() {
               <div className="flex items-center justify-between mb-2">
                 <span className="flex items-center gap-2 text-sm font-medium text-foreground">
                   <MessageCircle className="w-4 h-4 text-sky-400" />
-                  {t('score_buzz')}
+                  {t("score_buzz")}
                 </span>
-                <span className="text-sm font-bold text-sky-400">{scores.buzz}%</span>
+                <span className="text-sm font-bold text-sky-400">
+                  {scores.buzz}%
+                </span>
               </div>
               <div className="h-2.5 rounded-full bg-white/5 overflow-hidden">
                 <div
@@ -888,11 +962,122 @@ export default function MovieDetailPage() {
         </section>
 
         {/* ============================================================ */}
+        {/*  4b. FILM STATS                                               */}
+        {/* ============================================================ */}
+        <section className="glass rounded-2xl p-5 lg:p-6 animate-slide-up">
+          <h2 className="text-lg font-bold text-gradient mb-4">
+            {locale === "id" ? "Info Film" : "Film Info"}
+          </h2>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {/* Runtime */}
+            {movie.runtime > 0 && (
+              <div className="glass-strong rounded-xl p-3 flex flex-col gap-1">
+                <div className="flex items-center gap-1.5 text-muted-foreground">
+                  <Clock className="w-3.5 h-3.5" />
+                  <span className="text-[10px] uppercase tracking-wider font-semibold">
+                    {locale === "id" ? "Durasi" : "Runtime"}
+                  </span>
+                </div>
+                <p className="text-sm font-bold text-foreground">
+                  {formatRuntime(movie.runtime)}
+                </p>
+              </div>
+            )}
+
+            {/* Vote count */}
+            {movie.vote_count > 0 && (
+              <div className="glass-strong rounded-xl p-3 flex flex-col gap-1">
+                <div className="flex items-center gap-1.5 text-muted-foreground">
+                  <MessageCircle className="w-3.5 h-3.5" />
+                  <span className="text-[10px] uppercase tracking-wider font-semibold">
+                    {locale === "id" ? "Voting" : "Votes"}
+                  </span>
+                </div>
+                <p className="text-sm font-bold text-foreground">
+                  {movie.vote_count.toLocaleString()}
+                </p>
+              </div>
+            )}
+
+            {/* Popularity */}
+            {movie.popularity > 0 && (
+              <div className="glass-strong rounded-xl p-3 flex flex-col gap-1">
+                <div className="flex items-center gap-1.5 text-muted-foreground">
+                  <TrendingUp className="w-3.5 h-3.5" />
+                  <span className="text-[10px] uppercase tracking-wider font-semibold">
+                    Popularity
+                  </span>
+                </div>
+                <p className="text-sm font-bold text-foreground">
+                  {Number(movie.popularity).toFixed(1)}
+                </p>
+              </div>
+            )}
+
+            {/* Budget */}
+            {movie.budget > 0 && (
+              <div className="glass-strong rounded-xl p-3 flex flex-col gap-1">
+                <div className="flex items-center gap-1.5 text-muted-foreground">
+                  <ShoppingCart className="w-3.5 h-3.5" />
+                  <span className="text-[10px] uppercase tracking-wider font-semibold">
+                    Budget
+                  </span>
+                </div>
+                <p className="text-sm font-bold text-foreground">
+                  ${(movie.budget / 1_000_000).toFixed(1)}M
+                </p>
+              </div>
+            )}
+
+            {/* Revenue */}
+            {movie.revenue > 0 && (
+              <div className="glass-strong rounded-xl p-3 flex flex-col gap-1">
+                <div className="flex items-center gap-1.5 text-muted-foreground">
+                  <Zap className="w-3.5 h-3.5" />
+                  <span className="text-[10px] uppercase tracking-wider font-semibold">
+                    {locale === "id" ? "Pendapatan" : "Revenue"}
+                  </span>
+                </div>
+                <p className="text-sm font-bold text-foreground">
+                  ${(movie.revenue / 1_000_000).toFixed(1)}M
+                </p>
+              </div>
+            )}
+
+            {/* ROI — hanya tampil jika ada budget & revenue */}
+            {movie.budget > 0 && movie.revenue > 0 && (
+              <div className="glass-strong rounded-xl p-3 flex flex-col gap-1">
+                <div className="flex items-center gap-1.5 text-muted-foreground">
+                  <Star className="w-3.5 h-3.5" />
+                  <span className="text-[10px] uppercase tracking-wider font-semibold">
+                    ROI
+                  </span>
+                </div>
+                <p
+                  className={cn(
+                    "text-sm font-bold",
+                    movie.revenue >= movie.budget
+                      ? "text-emerald-400"
+                      : "text-red-400",
+                  )}
+                >
+                  {movie.revenue >= movie.budget
+                    ? `+${(((movie.revenue - movie.budget) / movie.budget) * 100).toFixed(0)}%`
+                    : `-${(((movie.budget - movie.revenue) / movie.budget) * 100).toFixed(0)}%`}
+                </p>
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* ============================================================ */}
         {/*  5. OVERVIEW                                                   */}
         {/* ============================================================ */}
         {displayOverview && (
           <section className="glass rounded-2xl p-5 lg:p-6 animate-slide-up">
-            <h2 className="text-lg font-bold text-gradient mb-3">{t('overview')}</h2>
+            <h2 className="text-lg font-bold text-gradient mb-3">
+              {t("overview")}
+            </h2>
             <p className="text-sm text-foreground/80 leading-relaxed whitespace-pre-line">
               {displayOverview}
             </p>
@@ -904,7 +1089,7 @@ export default function MovieDetailPage() {
         {/* ============================================================ */}
         {movie.credits?.cast && movie.credits.cast.length > 0 && (
           <section className="animate-slide-up">
-            <SectionHeader title={t('cast')} />
+            <SectionHeader title={t("cast")} />
             <div className="flex gap-4 overflow-x-auto scrollbar-hide pb-3 -mx-1 px-1">
               {movie.credits.cast.slice(0, 20).map((person) => (
                 <div
@@ -921,7 +1106,9 @@ export default function MovieDetailPage() {
                     </div>
                     <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                     <div className="absolute bottom-0 left-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <p className="text-[10px] text-white/70 line-clamp-1">{person.character}</p>
+                      <p className="text-[10px] text-white/70 line-clamp-1">
+                        {person.character}
+                      </p>
                     </div>
                   </div>
                   <p className="mt-1.5 text-xs font-medium text-foreground truncate group-hover:text-primary transition-colors">
@@ -941,10 +1128,13 @@ export default function MovieDetailPage() {
         {/* ============================================================ */}
         {movie.similar?.results && movie.similar.results.length > 0 && (
           <section className="animate-slide-up">
-            <SectionHeader title={t('similar')} />
+            <SectionHeader title={t("similar")} />
             <div className="flex gap-3 overflow-x-auto scrollbar-hide pb-2">
               {movie.similar.results.slice(0, 12).map((m) => (
-                <div key={m.id} className="w-[140px] lg:w-[160px] flex-shrink-0">
+                <div
+                  key={m.id}
+                  className="w-[140px] lg:w-[160px] flex-shrink-0"
+                >
                   <MovieCard movie={m as never} />
                 </div>
               ))}
@@ -954,10 +1144,13 @@ export default function MovieDetailPage() {
 
         {recommendations.length > 0 && (
           <section className="animate-slide-up">
-            <SectionHeader title={t('recommendations')} />
+            <SectionHeader title={t("recommendations")} />
             <div className="flex gap-3 overflow-x-auto scrollbar-hide pb-2">
               {recommendations.map((m) => (
-                <div key={m.id} className="w-[140px] lg:w-[160px] flex-shrink-0">
+                <div
+                  key={m.id}
+                  className="w-[140px] lg:w-[160px] flex-shrink-0"
+                >
                   <MovieCard movie={m as never} />
                 </div>
               ))}

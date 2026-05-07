@@ -3,13 +3,13 @@ name: Daily TMDB Sync
 on:
   schedule:
     - cron: "50 1 * * *" # curated sources, sekali sehari jam 08.50 WIB
-    - cron: "0 */4 * * *" # discover, tiap 4 jam → 6x sehari
+    - cron: "0 */4 * * *" # discover + cinema, tiap 4 jam → 6x sehari
   workflow_dispatch:
 
 jobs:
-  # ── Curated sources (sekali sehari) ────────────────────────────────────────
+  # ── Curated sources (sekali sehari jam 08.50 WIB) ──────────────────────────
   sync-trending:
-    if: github.event.schedule == '50 8 * * *' || github.event_name == 'workflow_dispatch'
+    if: github.event.schedule == '50 1 * * *' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Sync trending
@@ -19,7 +19,7 @@ jobs:
           --max-time 140 -w "\nHTTP Status: %{http_code}\n"
 
   sync-popular:
-    if: github.event.schedule == '50 8 * * *' || github.event_name == 'workflow_dispatch'
+    if: github.event.schedule == '50 1 * * *' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Sync popular
@@ -29,7 +29,7 @@ jobs:
           --max-time 140 -w "\nHTTP Status: %{http_code}\n"
 
   sync-top-rated:
-    if: github.event.schedule == '50 8 * * *' || github.event_name == 'workflow_dispatch'
+    if: github.event.schedule == '50 1 * * *' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Sync top_rated
@@ -39,12 +39,22 @@ jobs:
           --max-time 140 -w "\nHTTP Status: %{http_code}\n"
 
   sync-upcoming:
-    if: github.event.schedule == '50 8 * * *' || github.event_name == 'workflow_dispatch'
+    if: github.event.schedule == '50 1 * * *' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Sync upcoming
         run: |
           curl -X POST "https://xlfchtwebtehpuiaqush.supabase.co/functions/v1/sync_tmdb?source=upcoming" \
+          -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+          --max-time 140 -w "\nHTTP Status: %{http_code}\n"
+
+  sync-now-playing:
+    if: github.event.schedule == '50 1 * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync now_playing
+        run: |
+          curl -X POST "https://xlfchtwebtehpuiaqush.supabase.co/functions/v1/sync_tmdb?source=now_playing" \
           -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
           --max-time 140 -w "\nHTTP Status: %{http_code}\n"
 
@@ -58,3 +68,14 @@ jobs:
           curl -X POST "https://xlfchtwebtehpuiaqush.supabase.co/functions/v1/sync_tmdb?source=discover" \
           -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
           --max-time 140 -w "\nHTTP Status: %{http_code}\n"
+
+  # ── Cinema scraping (tiap 4 jam, bersamaan dengan discover) ────────────────
+  sync-cinema:
+    if: github.event.schedule == '0 */4 * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync cinema schedules (21cineplex + CGV)
+        run: |
+          curl -X POST "https://xlfchtwebtehpuiaqush.supabase.co/functions/v1/sync_cinema" \
+          -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+          --max-time 240 -w "\nHTTP Status: %{http_code}\n"
