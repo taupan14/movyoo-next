@@ -432,7 +432,7 @@ async function syncMovie(
             type: platformType,
             updated_at: new Date().toISOString(),
           },
-          { onConflict: "movie_id,platform_id,region,type" },
+          { onConflict: "movie_id,platform_id,region" },
         );
 
       if (upsertErr)
@@ -810,7 +810,7 @@ async function syncSeries(
           type: platformType,
           updated_at: new Date().toISOString(),
         },
-        { onConflict: "series_id,platform_id,region,type" },
+        { onConflict: "series_id,platform_id,region" },
       );
 
       if (upsertErr)

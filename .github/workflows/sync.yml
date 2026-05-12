@@ -110,9 +110,9 @@ jobs:
           -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
           --max-time 140 -w "\nHTTP Status: %{http_code}\n"
 
-  # ── Discover series / bank data (tiap 6 jam) ──────────────────────────────────────
+  # ── Discover series / bank data (tiap 5 jam) ──────────────────────────────────────
   sync-discover-tv:
-    if: github.event.schedule == '0 */6 * * *' || github.event_name == 'workflow_dispatch'
+    if: github.event.schedule == '0 */5 * * *' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Sync discover
