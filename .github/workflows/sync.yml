@@ -68,3 +68,55 @@ jobs:
           curl -X POST "https://xlfchtwebtehpuiaqush.supabase.co/functions/v1/sync_tmdb?source=discover" \
           -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
           --max-time 140 -w "\nHTTP Status: %{http_code}\n"
+
+  # ── Curated tv series sources (sekali sehari jam 08.50 WIB) ──────────────────────────
+  sync-trending-tv:
+    if: github.event.schedule == '20 1 * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync trending
+        run: |
+          curl -X POST "https://xlfchtwebtehpuiaqush.supabase.co/functions/v1/sync_tmdb?source=trending_tv" \
+          -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+          --max-time 140 -w "\nHTTP Status: %{http_code}\n"
+
+  sync-popular-tv:
+    if: github.event.schedule == '20 1 * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync popular
+        run: |
+          curl -X POST "https://xlfchtwebtehpuiaqush.supabase.co/functions/v1/sync_tmdb?source=popular_tv" \
+          -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+          --max-time 140 -w "\nHTTP Status: %{http_code}\n"
+
+  sync-top-rated-tv:
+    if: github.event.schedule == '20 1 * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync top_rated
+        run: |
+          curl -X POST "https://xlfchtwebtehpuiaqush.supabase.co/functions/v1/sync_tmdb?source=top_rated_tv" \
+          -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+          --max-time 140 -w "\nHTTP Status: %{http_code}\n"
+
+  sync-now-playing-tv:
+    if: github.event.schedule == '20 1 * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync now_playing
+        run: |
+          curl -X POST "https://xlfchtwebtehpuiaqush.supabase.co/functions/v1/sync_tmdb?source=on_the_air_tv" \
+          -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+          --max-time 140 -w "\nHTTP Status: %{http_code}\n"
+
+  # ── Discover series / bank data (tiap 6 jam) ──────────────────────────────────────
+  sync-discover-tv:
+    if: github.event.schedule == '0 */6 * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync discover
+        run: |
+          curl -X POST "https://xlfchtwebtehpuiaqush.supabase.co/functions/v1/sync_tmdb?source=discover_series" \
+          -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+          --max-time 140 -w "\nHTTP Status: %{http_code}\n"

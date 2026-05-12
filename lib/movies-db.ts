@@ -105,10 +105,10 @@ async function fetchIndonesian(
   const { data, error } = await supabase
     .from("movies")
     .select(
-      "id, title, poster_path, backdrop_path, vote_average, release_date, popularity, overview, overview_en",
+      "id, tmdb_id, title, poster_path, backdrop_path, vote_average, release_date, popularity, overview, overview_en",
     )
     .eq("original_language", "id")
-    .order("popularity", { ascending: false })
+    .order("release_date", { ascending: false })
     .limit(limit);
 
   if (error) {

@@ -15,6 +15,7 @@ import {
   CalendarClock,
   ChevronLeft,
   ChevronRight,
+  Heart,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -160,6 +161,8 @@ export function HomeClient() {
         if (!res.ok) throw new Error(`API error: ${res.status}`);
 
         const json: HomeData = await res.json();
+
+        // console.log("[HomeClient] fetched data:", json);
         setData(json);
       } catch (e) {
         // Abaikan error jika disebabkan oleh abort (ganti bahasa)
@@ -307,17 +310,18 @@ export function HomeClient() {
               </p>
               <div className="flex items-center gap-3">
                 <Link
-                  href={`/movie/${heroMovie.id}`}
+                  href={`/movie/${heroMovie.tmdb_id}`}
                   className="flex items-center gap-2 px-6 py-3 rounded-xl gradient-primary text-white font-medium hover:opacity-90 transition-opacity"
                 >
                   <Play className="w-4 h-4 fill-white" />
                   {t("where_to_watch")}
                 </Link>
                 <Link
-                  href={`/movie/${heroMovie.id}`}
+                  href={`#`}
                   className="flex items-center gap-2 px-6 py-3 rounded-xl glass text-white font-medium hover:bg-white/10 transition-colors"
                 >
-                  {t("overview")}
+                  <Heart className="w-4 h-4 fill-white" />
+                  {t("bookmark")}
                 </Link>
               </div>
             </div>
@@ -326,19 +330,6 @@ export function HomeClient() {
           {/* Slider Controls */}
           {heroMovies.length > 1 && (
             <>
-              <button
-                onClick={prevSlide}
-                className="absolute left-3 lg:left-6 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full glass flex items-center justify-center text-white/70 hover:text-white hover:bg-white/10 transition-all z-10"
-              >
-                <ChevronLeft className="w-5 h-5" />
-              </button>
-              <button
-                onClick={nextSlide}
-                className="absolute right-3 lg:right-6 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full glass flex items-center justify-center text-white/70 hover:text-white hover:bg-white/10 transition-all z-10"
-              >
-                <ChevronRight className="w-5 h-5" />
-              </button>
-
               <div className="absolute bottom-4 lg:bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2 z-10">
                 {heroMovies.map((_, idx) => (
                   <button
@@ -390,7 +381,7 @@ export function HomeClient() {
         <MovieRow title={t("trending")} movies={data.trending} />
 
         <MovieRow
-          title={t("now_playing")}
+          title={t("cinema_now_playing")}
           movies={nowPlaying}
           variant="backdrop"
         />
