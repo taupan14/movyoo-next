@@ -3,7 +3,9 @@ name: Daily TMDB Sync
 on:
   schedule:
     - cron: "50 1 * * *" # curated sources, sekali sehari jam 08.50 WIB
+    - cron: "20 1 * * *" # curated sources, sekali sehari jam 08.20 WIB
     - cron: "0 */4 * * *" # discover + cinema, tiap 4 jam → 6x sehari
+    - cron: "0 */5 * * *" # discover + cinema, tiap 4 jam → 6x sehari
   workflow_dispatch:
 
 jobs:
