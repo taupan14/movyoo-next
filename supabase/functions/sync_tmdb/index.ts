@@ -119,6 +119,54 @@ async function runInBatches<T>(
   return { succeeded, failed };
 }
 
+// ─── TYPES ─────────────────────────────────────────────────────────────────
+
+interface EpisodeInsertRow {
+  series_id: number;
+  season_number: number;
+  episode_number: number;
+  name: string;
+  overview_en: string | null;
+  still_path: string | null;
+  air_date: string | null;
+  runtime: number | null;
+}
+
+// ─── EPISODE HELPER ────────────────────────────────────────────────────────
+
+const EPISODE_DELAY_MS = 250; // jeda antar request season agar tidak kena rate limit TMDB
+
+async function fetchSeasonEpisodes(
+  tmdbId: number,
+  seasonNumber: number,
+): Promise<EpisodeInsertRow[] | null> {
+  try {
+    const data = await tmdbFetch(`/tv/${tmdbId}/season/${seasonNumber}`, {
+      language: "en-US",
+    });
+
+    const episodes: any[] = data.episodes ?? [];
+    if (episodes.length === 0) return null;
+
+    return episodes.map((ep) => ({
+      series_id: 0, // di-set saat upsert
+      season_number: seasonNumber,
+      episode_number: ep.episode_number,
+      name: ep.name ?? "",
+      overview_en: ep.overview || null,
+      still_path: ep.still_path ?? null,
+      air_date: ep.air_date ?? null,
+      runtime: ep.runtime ?? null,
+    }));
+  } catch (err) {
+    console.warn(
+      `[syncSeries] TMDB season fetch failed tmdb_id=${tmdbId} season=${seasonNumber}:`,
+      (err as Error).message,
+    );
+    return null;
+  }
+}
+
 // ─── SYNC SINGLE MOVIE ─────────────────────────────────────────────────────
 
 async function syncMovie(
@@ -893,6 +941,49 @@ async function syncSeries(
       },
       { onConflict: "series_id,person_id,job" },
     );
+  }
+
+  // ── EPISODES ──
+  // Sync semua episode per season untuk series ini.
+  // Hanya dijalankan jika series memiliki minimal 1 season.
+  // Episode yang sudah ada akan di-upsert (update data terbaru).
+  const numberOfSeasons: number = detailEn.number_of_seasons ?? 0;
+  if (numberOfSeasons > 0) {
+    const allEpisodeRows: EpisodeInsertRow[] = [];
+    let seasonsSynced = 0;
+
+    for (let sNum = 1; sNum <= numberOfSeasons; sNum++) {
+      await sleep(EPISODE_DELAY_MS);
+
+      const episodes = await fetchSeasonEpisodes(tmdbId, sNum);
+      if (!episodes || episodes.length === 0) continue;
+
+      for (const ep of episodes) ep.series_id = seriesId;
+      allEpisodeRows.push(...episodes);
+      seasonsSynced++;
+    }
+
+    if (allEpisodeRows.length > 0) {
+      const { error: epErr } = await supabase
+        .from("tv_episodes")
+        .upsert(allEpisodeRows, {
+          onConflict: "series_id,season_number,episode_number",
+        });
+
+      if (epErr) {
+        console.error(
+          `[episodes] Upsert failed [series:${seriesId} tmdb:${tmdbId}]: ${epErr.message}`,
+        );
+      } else {
+        console.log(
+          `[episodes] OK: series=${seriesId} — ${seasonsSynced} seasons, ${allEpisodeRows.length} episodes`,
+        );
+      }
+    } else {
+      console.log(
+        `[episodes] No episodes found for series=${seriesId} tmdb:${tmdbId}`,
+      );
+    }
   }
 }
 

@@ -117,6 +117,9 @@ export function getPosterUrl(
   size: string = "w500",
 ): string {
   if (!path) return "https://placehold.co/500x750/1a1a2e/eee?text=No+Poster";
+
+  // console.log("[path poster url]", path);
+  if (path.startsWith("http")) return path;
   return `${TMDB_IMG_BASE}/${size}${path}`;
 }
 
@@ -125,6 +128,9 @@ export function getBackdropUrl(
   size: string = "w1280",
 ): string {
   if (!path) return "https://placehold.co/1280x720/1a1a2e/eee?text=No+Image";
+
+  // console.log("[path backdrop url]", path);
+  if (path.startsWith("http")) return path;
   return `${TMDB_IMG_BASE}/${size}${path}`;
 }
 

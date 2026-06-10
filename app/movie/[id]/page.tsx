@@ -16,8 +16,7 @@ import {
   Clock,
   Calendar,
   Heart,
-  Bell,
-  BellRing,
+  BookmarkPlus,
   ChevronLeft,
   Play,
   Ticket,
@@ -37,10 +36,27 @@ import {
   X,
   DollarSign,
   TrendingDown,
+  Users,
+  Clapperboard,
+  Building2,
+  PenLine,
+  UserCircle2,
+  ThumbsUp,
+  ThumbsDown,
+  Flame,
+  Wind,
+  Zap as ZapIcon,
 } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { supabase } from "@/lib/supabase";
 
 /* ------------------------------------------------------------------ */
-/*  Types                                                              */
+/*  Types                                                             */
 /* ------------------------------------------------------------------ */
 
 interface Genre {
@@ -56,13 +72,26 @@ interface CastMember {
   order: number;
 }
 
+interface CrewMember {
+  id: number;
+  name: string;
+  job: string;
+  department: string;
+  profile_path: string | null;
+}
+
+interface ProductionCompany {
+  id: number;
+  name: string;
+  logo_path: string | null;
+  origin_country: string;
+}
+
 interface DisplayProvider {
   provider_id: number;
   provider_name: string;
   logo_path: string | null;
-  /** URL lengkap logo: https://image.tmdb.org/t/p/original + logo_path */
   logo_url: string | null;
-  /** Direct link ke halaman film di platform */
   url: string | null;
   status: "now" | "coming" | "leaving";
   leavingDays?: number;
@@ -87,7 +116,6 @@ interface WatchProviders {
   results?: Record<string, ProviderResult>;
 }
 
-/** Data satu chain bioskop dari API */
 interface CinemaChain {
   chain: string;
   cities: string[];
@@ -96,7 +124,6 @@ interface CinemaChain {
   formats: string[];
   earliest_date: string;
   latest_date: string;
-  /** "now_playing" | "ending_soon" */
   status: "now_playing" | "ending_soon";
 }
 
@@ -123,7 +150,11 @@ interface MovieData {
   revenue: number;
   status: string;
   trailer_key?: string | null;
-  credits?: { cast?: CastMember[] };
+  credits?: {
+    cast?: CastMember[];
+    crew?: CrewMember[];
+  };
+  production_companies?: ProductionCompany[];
   "watch/providers"?: WatchProviders;
   cinema?: CinemaData;
   similar?: { results?: MovieData[] };
@@ -145,11 +176,28 @@ interface RecommendationMovie {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Community Vote Types                                               */
+/* ------------------------------------------------------------------ */
+
+interface VoteCounts {
+  worth_it: { yes: number; skip: number; fan: number; total: number };
+  pace: { slow: number; medium: number; fast: number; total: number };
+  moods: Record<string, number>;
+}
+
+interface UserVote {
+  worth_it: "yes" | "skip" | "fan" | null;
+  pace: "slow" | "medium" | "fast" | null;
+  moods: string[];
+}
+
+/* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
 
 const WATCHLIST_KEY = "movyoo-watchlist";
 const REMINDERS_KEY = "movyoo-reminders";
+const VOTE_KEY = "movyoo-votes"; // localStorage key untuk menyimpan vote user
 
 function getStoredList(key: string): number[] {
   if (typeof window === "undefined") return [];
@@ -164,9 +212,24 @@ function getStoredList(key: string): number[] {
 function setStoredList(key: string, ids: number[]) {
   try {
     localStorage.setItem(key, JSON.stringify(ids));
+  } catch {}
+}
+
+function getStoredVotes(movieId: number): UserVote {
+  if (typeof window === "undefined")
+    return { worth_it: null, pace: null, moods: [] };
+  try {
+    const raw = localStorage.getItem(`${VOTE_KEY}-${movieId}`);
+    return raw ? JSON.parse(raw) : { worth_it: null, pace: null, moods: [] };
   } catch {
-    /* quota exceeded or private mode */
+    return { worth_it: null, pace: null, moods: [] };
   }
+}
+
+function setStoredVote(movieId: number, vote: UserVote) {
+  try {
+    localStorage.setItem(`${VOTE_KEY}-${movieId}`, JSON.stringify(vote));
+  } catch {}
 }
 
 function formatRuntime(mins: number): string {
@@ -208,6 +271,41 @@ function computeScores(movie: MovieData) {
   return { popularity, completion, buzz };
 }
 
+async function fetchVoteCounts(tmdbId: number): Promise<VoteCounts> {
+  const empty: VoteCounts = {
+    worth_it: { yes: 0, skip: 0, fan: 0, total: 0 },
+    pace: { slow: 0, medium: 0, fast: 0, total: 0 },
+    moods: {},
+  };
+  try {
+    const res = await fetch(`/api/movies/${tmdbId}/vote`);
+    if (!res.ok) return empty;
+    const data = await res.json();
+    return {
+      worth_it: data.worth_it ?? empty.worth_it,
+      pace: data.pace ?? empty.pace,
+      moods: data.moods ?? {},
+    };
+  } catch {
+    return empty;
+  }
+}
+
+async function callVoteApi(
+  movieId: number,
+  type: "worth_it" | "pace" | "mood",
+  vote: string,
+  action: "add" | "remove",
+) {
+  try {
+    await fetch(`/api/movies/${movieId}/vote`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type, vote, action }),
+    });
+  } catch {}
+}
+
 /* ------------------------------------------------------------------ */
 /*  Trailer Modal                                                      */
 /* ------------------------------------------------------------------ */
@@ -221,7 +319,6 @@ function TrailerModal({
   title: string;
   onClose: () => void;
 }) {
-  // Close on Escape
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -279,7 +376,6 @@ function CinemaChainCard({
 
   return (
     <div className="flex flex-col gap-2 p-3 rounded-xl bg-white/5 border border-white/10 hover-lift transition-all">
-      {/* Header */}
       <div className="flex items-center gap-3">
         <div className="w-10 h-10 rounded-lg bg-white/10 flex items-center justify-center flex-shrink-0">
           <Film className="w-5 h-5 text-primary" />
@@ -292,26 +388,16 @@ function CinemaChainCard({
             </p>
           )}
         </div>
-        {/* Badge status */}
         <Badge
           className={cn(
-            "text-[10px] shrink-0 pointer-events-none",
-            chain.status === "now_playing"
-              ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
-              : "bg-amber-500/20 text-amber-400 border-amber-500/30 animate-pulse",
+            "text-[10px] shrink-0 pointer-events-none mt-0",
+            "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
           )}
         >
-          {chain.status === "now_playing"
-            ? locale === "id"
-              ? "Sedang Tayang"
-              : "Now Playing"
-            : locale === "id"
-              ? "Segera Berakhir"
-              : "Ending Soon"}
+          {locale === "id" ? "Sedang Tayang" : "Now Playing"}
         </Badge>
       </div>
 
-      {/* Cities */}
       <div className="flex flex-wrap gap-1 pl-13">
         {visibleCities.map((city) => (
           <span
@@ -336,7 +422,6 @@ function CinemaChainCard({
         )}
       </div>
 
-      {/* Booking link */}
       {chain.booking_url && (
         <a
           href={chain.booking_url}
@@ -353,7 +438,7 @@ function CinemaChainCard({
 }
 
 /* ------------------------------------------------------------------ */
-/*  Provider card (Streaming & Sewa/Beli)                             */
+/*  Provider card                                                      */
 /* ------------------------------------------------------------------ */
 
 function ProviderCard({
@@ -374,15 +459,14 @@ function ProviderCard({
         p.status === "leaving"
           ? "bg-red-500/5 border-red-500/30"
           : "bg-white/5 border-white/10",
-        p.url ? "hover-lift cursor-pointer hover:border-primary/40" : "",
+        p.url ? "hover-lift cursor-pointer hover:border-primary/10" : "",
       )}
     >
-      {/* Logo */}
       {p.logo_url ? (
         <img
           src={p.logo_url}
           alt={p.provider_name}
-          className="w-10 h-10 rounded-lg object-contain bg-white/60 p-0.5"
+          className="w-10 h-10 rounded-lg object-contain bg-white/30 p-0.3"
           onError={(e) => {
             const target = e.currentTarget;
             target.style.display = "none";
@@ -398,24 +482,20 @@ function ProviderCard({
         <Tv className="w-5 h-5 text-muted-foreground" />
       </div>
 
-      {/* Name */}
       <p className="text-xs font-medium text-foreground truncate w-full text-center">
         {p.provider_name}
       </p>
 
-      {/* Purchase type label (Sewa/Beli tab) */}
       {purchaseLabel && (
         <p className="text-[10px] text-muted-foreground">{purchaseLabel}</p>
       )}
 
-      {/* Status badge */}
       <Badge className={cn("text-[10px] pointer-events-none", badgeClass)}>
         {badge}
       </Badge>
 
-      {/* External link icon overlay */}
       {p.url && (
-        <div className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-200 transition-opacity">
+        <div className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
           <ExternalLink className="w-3 h-3 text-primary/70" />
         </div>
       )}
@@ -433,6 +513,388 @@ function ProviderCard({
 }
 
 /* ------------------------------------------------------------------ */
+/*  Quick Decision — Community Vote Card                               */
+/* ------------------------------------------------------------------ */
+
+const ALL_MOODS = [
+  { key: "ketawa", id: "😂", label_id: "Lucu", label_en: "Funny" },
+  { key: "tegang", id: "😰", label_id: "Tegang", label_en: "Thrill" },
+  { key: "nangis", id: "😢", label_id: "Haru", label_en: "Touching" },
+  { key: "santai", id: "😌", label_id: "Santai", label_en: "Chill" },
+  { key: "mikir", id: "🤔", label_id: "Mikir", label_en: "Thought-Provoking" },
+  { key: "berat", id: "😞", label_id: "Berat", label_en: "Heavy" },
+  { key: "seru", id: "🤩", label_id: "Seru", label_en: "Exciting" },
+  { key: "horor", id: "😱", label_id: "Horor", label_en: "Scary" },
+];
+
+function pct(part: number, total: number) {
+  if (!total) return 0;
+  return Math.round((part / total) * 100);
+}
+
+function QuickDecisionCard({
+  movieId,
+  locale,
+  t,
+}: {
+  movieId: number;
+  locale: string;
+  t: (k: string) => string;
+}) {
+  const [voteCounts, setVoteCounts] = useState<VoteCounts>({
+    worth_it: { yes: 0, skip: 0, fan: 0, total: 0 },
+    pace: { slow: 0, medium: 0, fast: 0, total: 0 },
+    moods: {},
+  });
+  const [userVote, setUserVote] = useState<UserVote>({
+    worth_it: null,
+    pace: null,
+    moods: [],
+  });
+  const [loadingVotes, setLoadingVotes] = useState(true);
+  const [animKey, setAnimKey] = useState(0); // trigger re-anim on vote
+
+  useEffect(() => {
+    setUserVote(getStoredVotes(movieId));
+    fetchVoteCounts(movieId).then((counts) => {
+      setVoteCounts(counts);
+      setLoadingVotes(false);
+    });
+  }, [movieId]);
+
+  /* Worth It vote */
+  const handleWorthItVote = useCallback(
+    async (vote: "yes" | "skip" | "fan") => {
+      const prev = userVote.worth_it;
+      const next = prev === vote ? null : vote; // toggle off jika sama
+
+      // Optimistic update
+      setVoteCounts((c) => {
+        const wi = { ...c.worth_it };
+        if (prev) wi[prev] = Math.max(0, wi[prev] - 1);
+        if (next) wi[next] = wi[next] + 1;
+        wi.total = wi.yes + wi.skip + wi.fan;
+        return { ...c, worth_it: wi };
+      });
+      const newVote = { ...userVote, worth_it: next };
+      setUserVote(newVote);
+      setStoredVote(movieId, newVote);
+      setAnimKey((k) => k + 1);
+
+      if (prev) await callVoteApi(movieId, "worth_it", prev, "remove");
+      if (next) await callVoteApi(movieId, "worth_it", next, "add");
+    },
+    [movieId, userVote],
+  );
+
+  /* Pace vote */
+  const handlePaceVote = useCallback(
+    async (vote: "slow" | "medium" | "fast") => {
+      const prev = userVote.pace;
+      const next = prev === vote ? null : vote;
+
+      setVoteCounts((c) => {
+        const p = { ...c.pace };
+        if (prev) p[prev] = Math.max(0, p[prev] - 1);
+        if (next) p[next] = p[next] + 1;
+        p.total = p.slow + p.medium + p.fast;
+        return { ...c, pace: p };
+      });
+      const newVote = { ...userVote, pace: next };
+      setUserVote(newVote);
+      setStoredVote(movieId, newVote);
+      setAnimKey((k) => k + 1);
+
+      if (prev) await callVoteApi(movieId, "pace", prev, "remove");
+      if (next) await callVoteApi(movieId, "pace", next, "add");
+    },
+    [movieId, userVote],
+  );
+
+  /* Mood vote */
+  const handleMoodToggle = useCallback(
+    async (moodKey: string) => {
+      const hasVoted = userVote.moods.includes(moodKey);
+      const newMoods = hasVoted
+        ? userVote.moods.filter((m) => m !== moodKey)
+        : [...userVote.moods, moodKey];
+
+      setVoteCounts((c) => {
+        const m = { ...c.moods };
+        if (hasVoted) {
+          m[moodKey] = Math.max(0, (m[moodKey] ?? 0) - 1);
+        } else {
+          m[moodKey] = (m[moodKey] ?? 0) + 1;
+        }
+        return { ...c, moods: m };
+      });
+      const newVote = { ...userVote, moods: newMoods };
+      setUserVote(newVote);
+      setStoredVote(movieId, newVote);
+      setAnimKey((k) => k + 1);
+
+      await callVoteApi(movieId, "mood", moodKey, hasVoted ? "remove" : "add");
+    },
+    [movieId, userVote],
+  );
+
+  const worthItConfig = [
+    {
+      key: "yes" as const,
+      icon: CheckCircle2,
+      label: t("worth_it_yes"),
+      activeClass:
+        "bg-emerald-500/20 text-emerald-400 border-emerald-500/50 ring-2 ring-emerald-500/30 shadow-lg shadow-emerald-500/10",
+      barClass: "bg-emerald-500",
+      hoverClass: "hover:bg-emerald-500/10 hover:border-emerald-500/30",
+    },
+    {
+      key: "skip" as const,
+      icon: XCircle,
+      label: t("worth_it_skip"),
+      activeClass:
+        "bg-red-500/20 text-red-400 border-red-500/50 ring-2 ring-red-500/30 shadow-lg shadow-red-500/10",
+      barClass: "bg-red-500",
+      hoverClass: "hover:bg-red-500/10 hover:border-red-500/30",
+    },
+    {
+      key: "fan" as const,
+      icon: Sparkles,
+      label: t("worth_it_fan"),
+      activeClass:
+        "bg-amber-500/20 text-amber-400 border-amber-500/50 ring-2 ring-amber-500/30 shadow-lg shadow-amber-500/10",
+      barClass: "bg-amber-500",
+      hoverClass: "hover:bg-amber-500/10 hover:border-amber-500/30",
+    },
+  ];
+
+  const paceConfig = [
+    {
+      key: "slow" as const,
+      icon: Wind,
+      label: t("pace_slow"),
+      activeClass:
+        "bg-sky-500/20 text-sky-400 border-sky-500/50 ring-2 ring-sky-500/30",
+      barClass: "bg-sky-500",
+      hoverClass: "hover:bg-sky-500/10 hover:border-sky-500/30",
+    },
+    {
+      key: "medium" as const,
+      icon: Gauge,
+      label: t("pace_medium"),
+      activeClass:
+        "bg-yellow-500/20 text-yellow-400 border-yellow-500/50 ring-2 ring-yellow-500/30",
+      barClass: "bg-yellow-500",
+      hoverClass: "hover:bg-yellow-500/10 hover:border-yellow-500/30",
+    },
+    {
+      key: "fast" as const,
+      icon: Flame,
+      label: t("pace_fast"),
+      activeClass:
+        "bg-green-500/20 text-green-400 border-green-500/50 ring-2 ring-green-500/30",
+      barClass: "bg-green-500",
+      hoverClass: "hover:bg-green-500/10 hover:border-green-500/30",
+    },
+  ];
+
+  return (
+    <section className="glass rounded-2xl p-5 lg:p-6 animate-slide-up">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-lg font-bold text-primary">
+          {t("quick_decision")}
+        </h2>
+        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/5 border border-white/10">
+          <Users className="w-3 h-3 text-primary" />
+          <span className="text-[10px] text-muted-foreground">
+            {locale === "id" ? "Voting komunitas" : "Community vote"}
+          </span>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {/* ── Worth It ─────────────────────────────────────────────── */}
+        <div className="glass-strong rounded-xl p-4 flex flex-col gap-3">
+          <div className="flex items-center gap-2">
+            <Zap className="w-4 h-4 text-primary" />
+            <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">
+              Worth It?
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            {worthItConfig.map(
+              ({
+                key,
+                icon: Icon,
+                label,
+                activeClass,
+                barClass,
+                hoverClass,
+              }) => {
+                const isActive = userVote.worth_it === key;
+                const count = voteCounts.worth_it[key];
+                const total = voteCounts.worth_it.total;
+                const percent = pct(count, total);
+
+                return (
+                  <button
+                    key={key}
+                    onClick={() => handleWorthItVote(key)}
+                    className={cn(
+                      "relative w-full flex items-center gap-2.5 px-3 py-2 rounded-lg border text-xs font-medium transition-all duration-200 overflow-hidden text-left",
+                      "bg-white/5 border-white/10",
+                      hoverClass,
+                      isActive && activeClass,
+                    )}
+                  >
+                    {/* Progress bar background */}
+                    <div
+                      className={cn(
+                        "absolute inset-0 opacity-10 transition-all duration-500",
+                        barClass,
+                      )}
+                      style={{ width: `${percent}%` }}
+                    />
+                    <Icon className="w-3.5 h-3.5 relative z-10 flex-shrink-0" />
+                    <span className="relative z-10 flex-1">{label}</span>
+                    <span className="relative z-10 text-[10px] text-muted-foreground font-normal ml-auto">
+                      {loadingVotes ? "…" : `${percent}%`}
+                    </span>
+                  </button>
+                );
+              },
+            )}
+          </div>
+
+          {voteCounts.worth_it.total > 0 && (
+            <p className="text-[10px] text-muted-foreground text-center">
+              {voteCounts.worth_it.total.toLocaleString()}{" "}
+              {locale === "id" ? "vote" : "votes"}
+            </p>
+          )}
+        </div>
+
+        {/* ── Mood ─────────────────────────────────────────────────── */}
+        <div className="glass-strong rounded-xl p-4 flex flex-col gap-3">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-primary" />
+            <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">
+              {t("nav_mood")}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-1.5">
+            {ALL_MOODS.map(({ key, id: emoji, label_id, label_en }) => {
+              const isSelected = userVote.moods.includes(key);
+              const count = voteCounts.moods[key] ?? 0;
+              const label = locale === "id" ? label_id : label_en;
+
+              return (
+                <button
+                  key={key}
+                  onClick={() => handleMoodToggle(key)}
+                  title={`${count} vote${count !== 1 ? "s" : ""}`}
+                  className={cn(
+                    "inline-flex items-center gap-1 px-2.5 py-1 rounded-full border text-[11px] font-medium transition-all duration-200",
+                    isSelected
+                      ? "bg-primary/20 text-primary border-primary/40 ring-1 ring-primary/30 scale-105"
+                      : "bg-white/5 text-muted-foreground border-white/10 hover:bg-white/10 hover:text-foreground hover:border-white/20",
+                  )}
+                >
+                  <span>{emoji}</span>
+                  <span>{label}</span>
+                  {count > 0 && (
+                    <span
+                      className={cn(
+                        "text-[9px] rounded-full px-1",
+                        isSelected
+                          ? "text-primary/80"
+                          : "text-muted-foreground/60",
+                      )}
+                    >
+                      {count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          <p className="text-[10px] text-muted-foreground">
+            {locale === "id"
+              ? "Pilih suasana yang kamu rasakan"
+              : "Pick the vibes you felt"}
+          </p>
+        </div>
+
+        {/* ── Pace ─────────────────────────────────────────────────── */}
+        <div className="glass-strong rounded-xl p-4 flex flex-col gap-3">
+          <div className="flex items-center gap-2">
+            <Gauge className="w-4 h-4 text-primary" />
+            <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">
+              Pace
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            {paceConfig.map(
+              ({
+                key,
+                icon: Icon,
+                label,
+                activeClass,
+                barClass,
+                hoverClass,
+              }) => {
+                const isActive = userVote.pace === key;
+                const count = voteCounts.pace[key];
+                const total = voteCounts.pace.total;
+                const percent = pct(count, total);
+
+                return (
+                  <button
+                    key={key}
+                    onClick={() => handlePaceVote(key)}
+                    className={cn(
+                      "relative w-full flex items-center gap-2.5 px-3 py-2 rounded-lg border text-xs font-medium transition-all duration-200 overflow-hidden text-left",
+                      "bg-white/5 border-white/10",
+                      hoverClass,
+                      isActive && activeClass,
+                    )}
+                  >
+                    <div
+                      className={cn(
+                        "absolute inset-0 opacity-10 transition-all duration-500",
+                        barClass,
+                      )}
+                      style={{ width: `${percent}%` }}
+                    />
+                    <Icon className="w-3.5 h-3.5 relative z-10 flex-shrink-0" />
+                    <span className="relative z-10 flex-1">{label}</span>
+                    <span className="relative z-10 text-[10px] text-muted-foreground font-normal ml-auto">
+                      {loadingVotes ? "…" : `${percent}%`}
+                    </span>
+                  </button>
+                );
+              },
+            )}
+          </div>
+
+          {voteCounts.pace.total > 0 && (
+            <p className="text-[10px] text-muted-foreground text-center">
+              {voteCounts.pace.total.toLocaleString()}{" "}
+              {locale === "id" ? "vote" : "votes"}
+            </p>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
 
@@ -447,13 +909,22 @@ export default function MovieDetailPage() {
   const [recommendations, setRecommendations] = useState<RecommendationMovie[]>(
     [],
   );
+  const [similarByGenre, setSimilarByGenre] = useState<RecommendationMovie[]>(
+    [],
+  );
   const [loading, setLoading] = useState(true);
   const [showTrailer, setShowTrailer] = useState(false);
-
   const [inWatchlist, setInWatchlist] = useState(false);
-  const [reminderActive, setReminderActive] = useState(false);
+  const [isLiked, setIsLiked] = useState(false);
+  const [likedId, setLikedId] = useState<number | null>(null); // id row di user_liked
+  const [watchlistId, setWatchlistId] = useState<number | null>(null); // id row di user_watchlist
+  const [actionLoading, setActionLoading] = useState<
+    "liked" | "watchlist" | null
+  >(null);
 
-  /* Fetch movie + recommendations --------------------------------- */
+  const internalMovieId: number | null = (movie as any)?._internalId ?? null;
+
+  /* Fetch movie + recommendations ---------------------------------- */
   useEffect(() => {
     if (!movieId || Number.isNaN(movieId)) return;
 
@@ -472,6 +943,7 @@ export default function MovieDetailPage() {
 
         if (cancelled) return;
 
+        // console.log("Fetched movie:", json);
         if (json.movie) setMovie(json.movie as MovieData);
         if (json.recommendations)
           setRecommendations(json.recommendations as RecommendationMovie[]);
@@ -486,40 +958,171 @@ export default function MovieDetailPage() {
     };
   }, [movieId, locale, region]);
 
-  /* Sync localstorage state ---------------------------------------- */
+  /* Fetch similar movies by genre from DB -------------------------- */
   useEffect(() => {
-    if (!movieId) return;
-    setInWatchlist(getStoredList(WATCHLIST_KEY).includes(movieId));
-    setReminderActive(getStoredList(REMINDERS_KEY).includes(movieId));
-  }, [movieId]);
+    if (!movie || movie.genres.length === 0) return;
 
-  const toggleWatchlist = useCallback(() => {
-    const list = getStoredList(WATCHLIST_KEY);
-    if (inWatchlist) {
-      setStoredList(
-        WATCHLIST_KEY,
-        list.filter((id) => id !== movieId),
-      );
-      setInWatchlist(false);
-    } else {
-      setStoredList(WATCHLIST_KEY, [...list, movieId]);
-      setInWatchlist(true);
-    }
-  }, [inWatchlist, movieId]);
+    async function loadSimilarByGenre() {
+      try {
+        // Ambil genre_id dari genre pertama film ini
+        const primaryGenreName = movie!.genres[0]?.name;
+        if (!primaryGenreName) return;
 
-  const toggleReminder = useCallback(() => {
-    const list = getStoredList(REMINDERS_KEY);
-    if (reminderActive) {
-      setStoredList(
-        REMINDERS_KEY,
-        list.filter((id) => id !== movieId),
-      );
-      setReminderActive(false);
-    } else {
-      setStoredList(REMINDERS_KEY, [...list, movieId]);
-      setReminderActive(true);
+        // Cari genre di DB
+        const { data: genreRow } = await supabase
+          .from("genres")
+          .select("id")
+          .ilike("name", primaryGenreName)
+          .single();
+
+        if (!genreRow?.id) return;
+
+        // Ambil movie_id dari genre tersebut
+        const { data: movieGenres } = await supabase
+          .from("movie_genres")
+          .select("movie_id")
+          .eq("genre_id", genreRow.id)
+          .limit(50);
+
+        if (!movieGenres?.length) return;
+
+        const ids = movieGenres
+          .map((r: any) => r.movie_id)
+          .filter((id: number) => id !== movie!.id);
+
+        if (ids.length === 0) return;
+
+        // Ambil detail film
+        const { data: movies } = await supabase
+          .from("movies")
+          .select(
+            "id, tmdb_id, title, poster_path, backdrop_path, vote_average, release_date, popularity, overview, overview_en",
+          )
+          .in("id", ids)
+          .order("popularity", { ascending: false })
+          .limit(15);
+
+        if (movies) {
+          setSimilarByGenre(
+            movies.map((m: any) => ({
+              id: m.id,
+              title: m.title,
+              poster_path: m.poster_path,
+              backdrop_path: m.backdrop_path,
+              vote_average: Number(m.vote_average),
+              release_date: m.release_date,
+              popularity: Number(m.popularity),
+              overview:
+                locale === "id"
+                  ? m.overview || m.overview_en || ""
+                  : m.overview_en || m.overview || "",
+            })),
+          );
+        }
+      } catch (err) {
+        console.error("Failed to load similar by genre", err);
+      }
     }
-  }, [reminderActive, movieId]);
+
+    loadSimilarByGenre();
+  }, [movie, locale]);
+
+  /* Sync liked & watchlist status dari API -------------------------  */
+  useEffect(() => {
+    if (!internalMovieId) return;
+
+    async function fetchStatus() {
+      try {
+        const [likedRes, watchlistRes] = await Promise.all([
+          fetch("/api/liked"),
+          fetch("/api/watchlist?media_type=movie"),
+        ]);
+        if (likedRes.ok) {
+          const liked: any[] = await likedRes.json();
+          const found = liked.find((l) => l.movie_id === internalMovieId);
+          if (found) {
+            setIsLiked(true);
+            setLikedId(found.id);
+          } else {
+            setIsLiked(false);
+            setLikedId(null);
+          }
+        }
+        if (watchlistRes.ok) {
+          const wl: any[] = await watchlistRes.json();
+          const found = wl.find((w) => w.movie_id === internalMovieId);
+          if (found) {
+            setInWatchlist(true);
+            setWatchlistId(found.id);
+          } else {
+            setInWatchlist(false);
+            setWatchlistId(null);
+          }
+        }
+      } catch {}
+    }
+    fetchStatus();
+  }, [internalMovieId]);
+
+  const toggleLiked = useCallback(async () => {
+    if (actionLoading || !internalMovieId) return;
+    setActionLoading("liked");
+    try {
+      if (isLiked && likedId) {
+        await fetch(`/api/liked?id=${likedId}`, { method: "DELETE" });
+        setIsLiked(false);
+        setLikedId(null);
+      } else {
+        // console.log("Like movie", internalMovieId);
+        const res = await fetch("/api/liked", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            media_type: "movie",
+            movie_id: internalMovieId,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setIsLiked(true);
+          setLikedId(data.id);
+        }
+      }
+    } catch {
+    } finally {
+      setActionLoading(null);
+    }
+  }, [isLiked, likedId, internalMovieId, actionLoading]);
+
+  const toggleWatchlist = useCallback(async () => {
+    if (actionLoading || !internalMovieId) return;
+    setActionLoading("watchlist");
+    try {
+      if (inWatchlist && watchlistId) {
+        await fetch(`/api/watchlist?id=${watchlistId}`, { method: "DELETE" });
+        setInWatchlist(false);
+        setWatchlistId(null);
+      } else {
+        const res = await fetch("/api/watchlist", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            media_type: "movie",
+            movie_id: internalMovieId,
+            status: "want_to_watch",
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setInWatchlist(true);
+          setWatchlistId(data.id);
+        }
+      }
+    } catch {
+    } finally {
+      setActionLoading(null);
+    }
+  }, [inWatchlist, watchlistId, internalMovieId, actionLoading]);
 
   /* Derived data --------------------------------------------------- */
   const scores = movie
@@ -532,24 +1135,18 @@ export default function MovieDetailPage() {
   const releaseDate = movie?.release_date ? new Date(movie.release_date) : null;
   const isUpcoming = releaseDate ? releaseDate > today : false;
 
-  // Data bioskop real dari DB
   const cinemaData = movie?.cinema;
   const isShowingInCinema = cinemaData?.is_showing ?? false;
   const cinemaChains = cinemaData?.chains ?? [];
 
-  // Watch providers — ambil dari region yang diminta, fallback ke ID
   const countryProviders: ProviderResult | undefined =
     movie?.["watch/providers"]?.results?.[region] ||
     movie?.["watch/providers"]?.results?.["ID"];
 
   const displayOTT: DisplayProvider[] = (countryProviders?.flatrate ?? []).map(
-    (p) => ({
-      ...p,
-      status: "now" as const,
-    }),
+    (p) => ({ ...p, status: "now" as const }),
   );
 
-  // Sewa/Beli — gabungan rent + buy, deduplicate by provider_id
   const rentRaw = countryProviders?.rent ?? [];
   const buyRaw = countryProviders?.buy ?? [];
   const rentBuyMap = new Map<
@@ -577,12 +1174,25 @@ export default function MovieDetailPage() {
   }
   const displayRentBuy = Array.from(rentBuyMap.values());
 
-  // Semua region yang punya data streaming (untuk info "tersedia di negara")
   const streamingRegions = Object.entries(
     movie?.["watch/providers"]?.results ?? {},
   )
     .filter(([, v]) => (v.flatrate?.length ?? 0) > 0)
     .map(([k]) => k);
+
+  // Crew derived data
+  const crew = movie?.credits?.crew ?? [];
+  const directors = crew.filter((c) => c.job === "Director");
+  const producers = crew.filter(
+    (c) => c.job === "Producer" || c.job === "Executive Producer",
+  );
+  const writers = crew.filter(
+    (c) =>
+      c.job === "Screenplay" ||
+      c.job === "Writer" ||
+      c.job === "Story" ||
+      c.department === "Writing",
+  );
 
   /* ---------------------------------------------------------------- */
   /*  Loading skeleton                                                 */
@@ -625,10 +1235,9 @@ export default function MovieDetailPage() {
       {/*  1. HERO SECTION                                              */}
       {/* ============================================================ */}
       <section className="relative h-[55vh] lg:h-[70vh] -mt-14 lg:mt-0 overflow-hidden">
-        {/* Backdrop */}
         <div className="absolute inset-0">
           <img
-            src={getBackdropUrl(movie.backdrop_path)}
+            src={getBackdropUrl(movie.backdrop_path ?? movie.poster_path)}
             alt={movie.title}
             className="w-full h-full object-cover"
           />
@@ -636,7 +1245,6 @@ export default function MovieDetailPage() {
           <div className="absolute inset-0 bg-gradient-to-r from-background/80 via-background/30 to-transparent" />
         </div>
 
-        {/* Back button */}
         <button
           onClick={() => router.back()}
           className="absolute top-16 lg:top-4 left-4 z-20 flex items-center gap-1.5 px-3 py-2 rounded-full glass text-white text-sm font-medium hover:bg-white/20 transition-colors"
@@ -645,7 +1253,6 @@ export default function MovieDetailPage() {
           {locale === "id" ? "Kembali" : "Back"}
         </button>
 
-        {/* Hero content */}
         <div className="relative h-full flex items-end pb-8 lg:pb-14 px-4 lg:px-8">
           <div className="flex gap-5 lg:gap-8 items-end w-full max-w-5xl animate-slide-up">
             {/* Poster */}
@@ -659,7 +1266,6 @@ export default function MovieDetailPage() {
                   />
                 </div>
                 <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
-                {/* Play trailer button overlay */}
                 {movie.trailer_key && (
                   <button
                     onClick={() => setShowTrailer(true)}
@@ -680,30 +1286,31 @@ export default function MovieDetailPage() {
                   &ldquo;{movie.tagline}&rdquo;
                 </p>
               )}
-              <h1 className="text-2xl lg:text-4xl font-bold text-white leading-tight mb-3">
+              <h1 className="text-2xl lg:text-4xl font-bold text-white leading-tight mb-1">
                 {movie.title}
               </h1>
 
-              {/* Meta row */}
+              {displayOverview && (
+                <p className="text-muted-foreground text-sm mb-1 line-clamp-2 mb-3">
+                  {displayOverview}
+                </p>
+              )}
+
               <div className="flex flex-wrap items-center gap-3 mb-3">
-                {/* Rating */}
                 <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-yellow-500/20 text-yellow-400 text-sm font-semibold">
                   <Star className="w-4 h-4 fill-yellow-400" />
                   {movie.vote_average.toFixed(1)}
                 </span>
-                {/* Runtime */}
                 <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/10 text-white/80 text-sm">
                   <Clock className="w-3.5 h-3.5" />
                   {formatRuntime(movie.runtime)}
                 </span>
-                {/* Release date */}
                 <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/10 text-white/80 text-sm">
                   <Calendar className="w-3.5 h-3.5" />
                   {formatReleaseDate(movie.release_date)}
                 </span>
               </div>
 
-              {/* Genres */}
               <div className="flex flex-wrap gap-2 mb-4">
                 {movie.genres.map((g) => (
                   <Badge
@@ -716,58 +1323,90 @@ export default function MovieDetailPage() {
                 ))}
               </div>
 
-              {/* Action buttons */}
               <div className="flex flex-wrap gap-2">
-                <Button
-                  size="lg"
-                  onClick={toggleWatchlist}
-                  className={cn(
-                    "rounded-xl font-semibold transition-all duration-300",
-                    inWatchlist
-                      ? "bg-primary text-primary-foreground shadow-lg shadow-primary/30"
-                      : "gradient-primary text-white hover:opacity-90",
-                  )}
-                >
-                  <Heart
-                    className={cn(
-                      "w-4 h-4 mr-2",
-                      inWatchlist && "fill-current",
-                    )}
-                  />
-                  {inWatchlist ? t("in_watchlist") : t("add_to_watchlist")}
-                </Button>
+                <TooltipProvider delayDuration={300}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        size="lg"
+                        onClick={toggleLiked}
+                        disabled={actionLoading === "liked"}
+                        className={cn(
+                          "rounded-xl font-semibold transition-all duration-300",
+                          isLiked
+                            ? "gradient-primary text-white shadow-lg shadow-primary/30"
+                            : "gradient-primary border border-white/20 text-white hover:bg-white/20",
+                        )}
+                      >
+                        <Heart
+                          className={cn(
+                            "w-4 h-4 transition-all",
+                            isLiked && "fill-current",
+                            actionLoading === "liked" && "animate-pulse",
+                          )}
+                        />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent
+                      side="top"
+                      className="bg-black/90 border border-white/10 text-white text-xs px-3 py-2 rounded-lg backdrop-blur-sm"
+                    >
+                      {isLiked
+                        ? locale === "id"
+                          ? "Klik untuk batal menyukai"
+                          : "Click to unlike"
+                        : locale === "id"
+                          ? "Tandai film ini sebagai favorit"
+                          : "Mark this film as a favorite"}
+                    </TooltipContent>
+                  </Tooltip>
 
-                {/* Trailer button */}
-                {movie.trailer_key && (
-                  <Button
-                    size="lg"
-                    variant="outline"
-                    onClick={() => setShowTrailer(true)}
-                    className="rounded-xl font-semibold border-white/20 text-white hover:bg-white/10 transition-all duration-300"
-                  >
-                    <Play className="w-4 h-4 mr-2 fill-current" />
-                    Trailer
-                  </Button>
-                )}
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        size="lg"
+                        onClick={toggleWatchlist}
+                        disabled={actionLoading === "watchlist"}
+                        className={cn(
+                          "rounded-xl font-semibold transition-all duration-300",
+                          inWatchlist
+                            ? "gradient-primary text-white shadow-lg shadow-primary/30"
+                            : "bg-white/10 border border-white/20 text-white hover:bg-white/20",
+                        )}
+                      >
+                        <BookmarkPlus
+                          className={cn(
+                            "w-4 h-4 mr-2 transition-all",
+                            inWatchlist && "fill-current",
+                            actionLoading === "watchlist" && "animate-pulse",
+                          )}
+                        />
+                        {inWatchlist ? t("bookmarked") : t("bookmark")}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent
+                      side="top"
+                      className="bg-black/90 border border-white/10 text-white text-xs px-3 py-2 rounded-lg backdrop-blur-sm"
+                    >
+                      {inWatchlist
+                        ? locale === "id"
+                          ? "Klik untuk hapus dari daftar tontonan"
+                          : "Click to remove from watchlist"
+                        : locale === "id"
+                          ? "Simpan ke daftar tontonan kamu"
+                          : "Save to your watchlist"}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
 
-                <Button
-                  size="lg"
-                  variant="outline"
-                  onClick={toggleReminder}
-                  className={cn(
-                    "rounded-xl font-semibold border-white/20 transition-all duration-300",
-                    reminderActive
-                      ? "bg-yellow-500/20 text-yellow-400 border-yellow-500/40"
-                      : "text-white hover:bg-white/10",
+                {!isShowingInCinema &&
+                  !isUpcoming &&
+                  displayOTT.length === 0 &&
+                  displayRentBuy.length === 0 && (
+                    <p className="flex items-center text-primary/90 text-sm italic ml-2">
+                      {t("not_available")}
+                    </p>
                   )}
-                >
-                  {reminderActive ? (
-                    <BellRing className="w-4 h-4 mr-2" />
-                  ) : (
-                    <Bell className="w-4 h-4 mr-2" />
-                  )}
-                  {reminderActive ? t("reminder_set") : t("set_reminder")}
-                </Button>
               </div>
             </div>
           </div>
@@ -777,92 +1416,16 @@ export default function MovieDetailPage() {
       {/* ============================================================ */}
       {/*  Content area                                                 */}
       {/* ============================================================ */}
-      <div className="px-4 lg:px-8 max-w-5xl mx-auto -mt-2 relative z-10 space-y-8 pb-16">
-        {/* Mobile poster row */}
+      <div className="px-4 lg:px-8 max-w-5xl mx-auto -mt-4 relative z-10 space-y-8 pb-16">
+        {/* Mobile not available notice */}
         <div className="sm:hidden flex gap-4 animate-slide-up">
-          <div className="w-[110px] flex-shrink-0 rounded-xl overflow-hidden shadow-xl shadow-black/40 hover-lift relative">
-            <div className="aspect-[2/3]">
-              <img
-                src={getPosterUrl(movie.poster_path)}
-                alt={movie.title}
-                className="w-full h-full object-cover"
-              />
-            </div>
-            {movie.trailer_key && (
-              <button
-                onClick={() => setShowTrailer(true)}
-                className="absolute inset-0 flex items-center justify-center bg-black/30"
-              >
-                <div className="w-10 h-10 rounded-full bg-white/90 flex items-center justify-center">
-                  <Play className="w-4 h-4 text-black fill-black ml-0.5" />
-                </div>
-              </button>
-            )}
-          </div>
-          <div className="flex-1 min-w-0 space-y-2">
-            {movie.tagline && (
-              <p className="text-primary/90 text-sm italic">
-                &ldquo;{movie.tagline}&rdquo;
+          {!isShowingInCinema &&
+            displayOTT.length == 0 &&
+            displayRentBuy.length == 0 && (
+              <p className="text-primary/90 text-sm italic ml-2">
+                {t("not_available")}
               </p>
             )}
-            <div className="flex flex-wrap gap-2">
-              {movie.genres.map((g) => (
-                <Badge
-                  key={g.id}
-                  variant="secondary"
-                  className="bg-white/10 text-white/80 border-white/10"
-                >
-                  {g.name}
-                </Badge>
-              ))}
-            </div>
-            <div className="flex flex-wrap gap-2 pt-1">
-              <Button
-                size="sm"
-                onClick={toggleWatchlist}
-                className={cn(
-                  "rounded-lg text-xs",
-                  inWatchlist
-                    ? "bg-primary text-primary-foreground"
-                    : "gradient-primary text-white",
-                )}
-              >
-                <Heart
-                  className={cn("w-3 h-3 mr-1", inWatchlist && "fill-current")}
-                />
-                {inWatchlist ? t("in_watchlist") : t("add_to_watchlist")}
-              </Button>
-              {movie.trailer_key && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setShowTrailer(true)}
-                  className="rounded-lg text-xs border-white/20 text-white"
-                >
-                  <Play className="w-3 h-3 mr-1 fill-current" />
-                  Trailer
-                </Button>
-              )}
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={toggleReminder}
-                className={cn(
-                  "rounded-lg text-xs border-white/20",
-                  reminderActive
-                    ? "bg-yellow-500/20 text-yellow-400 border-yellow-500/40"
-                    : "text-white",
-                )}
-              >
-                {reminderActive ? (
-                  <BellRing className="w-3 h-3 mr-1" />
-                ) : (
-                  <Bell className="w-3 h-3 mr-1" />
-                )}
-                {reminderActive ? t("reminder_set") : t("set_reminder")}
-              </Button>
-            </div>
-          </div>
         </div>
 
         {/* ============================================================ */}
@@ -898,7 +1461,7 @@ export default function MovieDetailPage() {
               </TabsTrigger>
             </TabsList>
 
-            {/* ── Cinema tab ── */}
+            {/* Cinema tab */}
             <TabsContent value="cinema" className="mt-4">
               {isShowingInCinema ? (
                 <>
@@ -938,14 +1501,14 @@ export default function MovieDetailPage() {
                   </div>
                   <p className="text-sm text-muted-foreground text-center">
                     {locale === "id"
-                      ? "Film ini tidak tayang di bioskop"
+                      ? "Film ini tidak tayang di bioskop Indonesia"
                       : "This movie is no longer showing in cinemas"}
                   </p>
                 </div>
               )}
             </TabsContent>
 
-            {/* ── Streaming tab ── */}
+            {/* Streaming tab */}
             <TabsContent value="ott" className="mt-4">
               {displayOTT.length > 0 ? (
                 <>
@@ -971,8 +1534,6 @@ export default function MovieDetailPage() {
                       />
                     ))}
                   </div>
-
-                  {/* Info negara lain yang tersedia */}
                   {streamingRegions.length > 1 && (
                     <p className="text-[10px] text-muted-foreground mt-3 text-center">
                       {locale === "id"
@@ -995,7 +1556,7 @@ export default function MovieDetailPage() {
               )}
             </TabsContent>
 
-            {/* ── Sewa / Beli tab ── */}
+            {/* Sewa/Beli tab */}
             <TabsContent value="rentbuy" className="mt-4">
               {displayRentBuy.length > 0 ? (
                 <>
@@ -1047,67 +1608,165 @@ export default function MovieDetailPage() {
         </section>
 
         {/* ============================================================ */}
-        {/*  5. OVERVIEW                                                   */}
+        {/*  5. SINOPSIS + FILMMAKER INFO                                 */}
         {/* ============================================================ */}
         {displayOverview && (
           <section className="glass rounded-2xl p-5 lg:p-6 animate-slide-up">
             <h2 className="text-lg font-bold text-gradient mb-3">
               {t("overview")}
             </h2>
-            <p className="text-sm text-foreground/80 leading-relaxed whitespace-pre-line">
+            <p className="text-sm text-foreground/80 leading-relaxed whitespace-pre-line mb-5">
               {displayOverview}
             </p>
-          </section>
-        )}
 
-        {/* ============================================================ */}
-        {/*  6. TRAILER                                                    */}
-        {/* ============================================================ */}
-        {movie.trailer_key && (
-          <section className="animate-slide-up">
-            <SectionHeader title={locale === "id" ? "Trailer" : "Trailer"} />
-            <div
-              className="relative rounded-2xl overflow-hidden cursor-pointer hover-lift group"
-              onClick={() => setShowTrailer(true)}
-            >
-              {/* Thumbnail dari YouTube */}
-              <div className="aspect-video w-full bg-black/40">
-                <img
-                  src={`https://img.youtube.com/vi/${movie.trailer_key}/maxresdefault.jpg`}
-                  alt={`${movie.title} trailer`}
-                  className="w-full h-full object-cover opacity-80 group-hover:opacity-60 transition-opacity duration-300"
-                  onError={(e) => {
-                    // fallback ke hqdefault jika maxresdefault tidak ada
-                    const t = e.currentTarget;
-                    if (!t.src.includes("hqdefault")) {
-                      t.src = `https://img.youtube.com/vi/${movie.trailer_key}/hqdefault.jpg`;
-                    }
-                  }}
-                />
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-16 h-16 rounded-full bg-white/90 flex items-center justify-center shadow-2xl shadow-black/40 group-hover:scale-110 transition-transform duration-300">
-                    <Play className="w-7 h-7 text-black fill-black ml-1" />
+            {/* Divider hanya jika ada info filmmaker */}
+            {(directors.length > 0 ||
+              producers.length > 0 ||
+              writers.length > 0 ||
+              (movie.production_companies?.length ?? 0) > 0) && (
+              <div className="border-t border-white/8 pt-4 grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4">
+                {/* Sutradara */}
+                {directors.length > 0 && (
+                  <div className="flex gap-3">
+                    <div className="flex-shrink-0 w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center mt-0.5">
+                      <Clapperboard className="w-3.5 h-3.5 text-primary" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-1">
+                        {locale === "id" ? "Sutradara" : "Director"}
+                      </p>
+                      <div className="flex flex-wrap gap-1">
+                        {directors.map((d) => (
+                          <span
+                            key={d.id}
+                            className="text-sm font-medium text-foreground"
+                          >
+                            {d.name}
+                            {directors.indexOf(d) < directors.length - 1
+                              ? ", "
+                              : ""}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
                   </div>
-                </div>
+                )}
+
+                {/* Penulis */}
+                {writers.length > 0 && (
+                  <div className="flex gap-3">
+                    <div className="flex-shrink-0 w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center mt-0.5">
+                      <PenLine className="w-3.5 h-3.5 text-primary" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-1">
+                        {locale === "id" ? "Penulis" : "Writer"}
+                      </p>
+                      <div className="flex flex-wrap gap-x-1">
+                        {writers.slice(0, 3).map((w, i) => (
+                          <span
+                            key={w.id}
+                            className="text-sm font-medium text-foreground"
+                          >
+                            {w.name}
+                            {i < Math.min(writers.length, 3) - 1 ? ", " : ""}
+                          </span>
+                        ))}
+                        {writers.length > 3 && (
+                          <span className="text-sm text-muted-foreground">
+                            +{writers.length - 3} more
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Produser */}
+                {producers.length > 0 && (
+                  <div className="flex gap-3">
+                    <div className="flex-shrink-0 w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center mt-0.5">
+                      <UserCircle2 className="w-3.5 h-3.5 text-primary" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-1">
+                        {locale === "id" ? "Produser" : "Producer"}
+                      </p>
+                      <div className="flex flex-wrap gap-x-1">
+                        {producers.slice(0, 3).map((p, i) => (
+                          <span
+                            key={`${p.id}-${p.job}`}
+                            className="text-sm font-medium text-foreground"
+                          >
+                            {p.name}
+                            {i < Math.min(producers.length, 3) - 1 ? ", " : ""}
+                          </span>
+                        ))}
+                        {producers.length > 3 && (
+                          <span className="text-sm text-muted-foreground">
+                            +{producers.length - 3} more
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Rumah Produksi */}
+                {(movie.production_companies?.length ?? 0) > 0 && (
+                  <div className="flex gap-3">
+                    <div className="flex-shrink-0 w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center mt-0.5">
+                      <Building2 className="w-3.5 h-3.5 text-primary" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-1">
+                        {locale === "id"
+                          ? "Rumah Produksi"
+                          : "Production House"}
+                      </p>
+                      <div className="flex flex-wrap items-center gap-2 mt-1">
+                        {movie.production_companies!.slice(0, 4).map((pc) => (
+                          <div
+                            key={pc.id}
+                            className="flex items-center gap-1.5"
+                          >
+                            {pc.logo_path ? (
+                              <img
+                                src={`https://image.tmdb.org/t/p/w92${pc.logo_path}`}
+                                alt={pc.name}
+                                className="h-3.5 object-contain filter brightness-0 invert opacity-60"
+                                title={pc.name}
+                              />
+                            ) : (
+                              <span className="text-sm font-medium text-foreground">
+                                {pc.name}
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                        {(movie.production_companies?.length ?? 0) > 4 && (
+                          <span className="text-xs text-muted-foreground">
+                            +{(movie.production_companies?.length ?? 0) - 4}{" "}
+                            more
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
-              <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent">
-                <p className="text-white font-semibold text-sm">
-                  {movie.title} — Official Trailer
-                </p>
-              </div>
-            </div>
+            )}
           </section>
         )}
 
         {/* ============================================================ */}
-        {/*  4b. INFO FILM — termasuk Release Date, Budget, Revenue       */}
+        {/*  4b. INFO FILM                                                */}
         {/* ============================================================ */}
         <section className="glass rounded-2xl p-5 lg:p-6 animate-slide-up">
           <h2 className="text-lg font-bold text-gradient mb-4">
             {locale === "id" ? "Info Film" : "Film Info"}
           </h2>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            {/* Runtime */}
             {movie.runtime > 0 && (
               <div className="glass-strong rounded-xl p-3 flex flex-col gap-1">
                 <div className="flex items-center gap-1.5 text-muted-foreground">
@@ -1122,22 +1781,6 @@ export default function MovieDetailPage() {
               </div>
             )}
 
-            {/* Release Date */}
-            {/* {movie.release_date && (
-              <div className="glass-strong rounded-xl p-3 flex flex-col gap-1">
-                <div className="flex items-center gap-1.5 text-muted-foreground">
-                  <Calendar className="w-3.5 h-3.5" />
-                  <span className="text-[10px] uppercase tracking-wider font-semibold">
-                    {locale === "id" ? "Rilis" : "Release"}
-                  </span>
-                </div>
-                <p className="text-sm font-bold text-foreground">
-                  {formatReleaseDate(movie.release_date)}
-                </p>
-              </div>
-            )} */}
-
-            {/* Vote count */}
             {movie.vote_count > 0 && (
               <div className="glass-strong rounded-xl p-3 flex flex-col gap-1">
                 <div className="flex items-center gap-1.5 text-muted-foreground">
@@ -1152,7 +1795,6 @@ export default function MovieDetailPage() {
               </div>
             )}
 
-            {/* Popularity */}
             {movie.popularity > 0 && (
               <div className="glass-strong rounded-xl p-3 flex flex-col gap-1">
                 <div className="flex items-center gap-1.5 text-muted-foreground">
@@ -1167,7 +1809,6 @@ export default function MovieDetailPage() {
               </div>
             )}
 
-            {/* Budget */}
             {movie.budget > 0 && (
               <div className="glass-strong rounded-xl p-3 flex flex-col gap-1">
                 <div className="flex items-center gap-1.5 text-muted-foreground">
@@ -1182,7 +1823,6 @@ export default function MovieDetailPage() {
               </div>
             )}
 
-            {/* Revenue */}
             {movie.revenue > 0 && (
               <div className="glass-strong rounded-xl p-3 flex flex-col gap-1">
                 <div className="flex items-center gap-1.5 text-muted-foreground">
@@ -1197,7 +1837,6 @@ export default function MovieDetailPage() {
               </div>
             )}
 
-            {/* ROI — hanya tampil jika ada budget & revenue */}
             {movie.budget > 0 && movie.revenue > 0 && (
               <div className="glass-strong rounded-xl p-3 flex flex-col gap-1">
                 <div className="flex items-center gap-1.5 text-muted-foreground">
@@ -1239,7 +1878,6 @@ export default function MovieDetailPage() {
           <h2 className="text-lg font-bold text-gradient mb-5">Film Score</h2>
 
           <div className="space-y-4">
-            {/* Popularity */}
             <div>
               <div className="flex items-center justify-between mb-2">
                 <span className="flex items-center gap-2 text-sm font-medium text-foreground">
@@ -1258,7 +1896,6 @@ export default function MovieDetailPage() {
               </div>
             </div>
 
-            {/* Completion Rate */}
             <div>
               <div className="flex items-center justify-between mb-2">
                 <span className="flex items-center gap-2 text-sm font-medium text-foreground">
@@ -1277,7 +1914,6 @@ export default function MovieDetailPage() {
               </div>
             </div>
 
-            {/* Social Buzz */}
             <div>
               <div className="flex items-center justify-between mb-2">
                 <span className="flex items-center gap-2 text-sm font-medium text-foreground">
@@ -1299,148 +1935,46 @@ export default function MovieDetailPage() {
         </section>
 
         {/* ============================================================ */}
-        {/*  3. QUICK DECISION CARD                                       */}
+        {/*  6. TRAILER                                                    */}
         {/* ============================================================ */}
-        <section className="glass rounded-2xl p-5 lg:p-6 animate-slide-up">
-          <h2 className="text-lg font-bold text-gradient mb-4">
-            {t("quick_decision")}
-          </h2>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {/* Worth It? */}
-            <div className="glass-strong rounded-xl p-4 flex flex-col items-center gap-3">
-              <Zap className="w-6 h-6 text-primary" />
-              <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">
-                Worth It?
-              </p>
-              <div className="flex gap-2">
-                <Badge
-                  className={cn(
-                    "cursor-default text-xs px-3 py-1",
-                    movie.worth_it === "yes"
-                      ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40 ring-1 ring-emerald-500/40"
-                      : "bg-white/5 text-white/40 border-white/10",
-                  )}
-                >
-                  <CheckCircle2 className="w-3 h-3 mr-1" />
-                  {t("worth_it_yes")}
-                </Badge>
-                <Badge
-                  className={cn(
-                    "cursor-default text-xs px-3 py-1",
-                    movie.worth_it === "skip"
-                      ? "bg-red-500/20 text-red-400 border-red-500/40 ring-1 ring-red-500/40"
-                      : "bg-white/5 text-white/40 border-white/10",
-                  )}
-                >
-                  <XCircle className="w-3 h-3 mr-1" />
-                  {t("worth_it_skip")}
-                </Badge>
-                <Badge
-                  className={cn(
-                    "cursor-default text-xs px-3 py-1",
-                    movie.worth_it === "fan"
-                      ? "bg-amber-500/20 text-amber-400 border-amber-500/40 ring-1 ring-amber-500/40"
-                      : "bg-white/5 text-white/40 border-white/10",
-                  )}
-                >
-                  <Sparkles className="w-3 h-3 mr-1" />
-                  {t("worth_it_fan")}
-                </Badge>
-              </div>
-              {(!movie.worth_it || movie.worth_it === "yes") && (
-                <div className="mt-1 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                  <span className="text-sm font-semibold text-emerald-400">
-                    {t("worth_it_yes")}
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {/* Mood tags */}
-            <div className="glass-strong rounded-xl p-4 flex flex-col items-center gap-3">
-              <Sparkles className="w-6 h-6 text-primary" />
-              <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">
-                {t("nav_mood")}
-              </p>
-              <div className="flex flex-wrap justify-center gap-1.5">
-                {(movie.mood_tags || ["Tegang", "Mikir"]).map((mood) => {
-                  const label =
-                    locale === "id"
-                      ? mood
-                      : ({
-                          ketawa: "Laugh",
-                          tegang: "Thrill",
-                          nangis: "Cry",
-                          santai: "Chill",
-                          mikir: "Think",
-                          berat: "Heavy",
-                        }[mood.toLowerCase()] ?? mood);
-                  return (
-                    <Badge
-                      key={mood}
-                      variant="secondary"
-                      className="bg-primary/10 text-primary border-primary/20 text-xs"
-                    >
-                      {label}
-                    </Badge>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Pace */}
-            <div className="glass-strong rounded-xl p-4 flex flex-col items-center gap-3">
-              <Gauge className="w-6 h-6 text-primary" />
-              <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">
-                Pace
-              </p>
-              <div className="flex gap-2 items-center">
-                {(["slow", "medium", "fast"] as const).map((p) => {
-                  const active =
-                    movie.pace === p || (!movie.pace && p === "medium");
-                  return (
-                    <Badge
-                      key={p}
-                      className={cn(
-                        "text-xs px-3 py-1",
-                        active
-                          ? "bg-primary/20 text-primary border-primary/40 ring-1 ring-primary/40"
-                          : "bg-white/5 text-white/40 border-white/10",
-                      )}
-                    >
-                      {t(
-                        `pace_${p}` as
-                          | "pace_slow"
-                          | "pace_medium"
-                          | "pace_fast",
-                      )}
-                    </Badge>
-                  );
-                })}
-              </div>
-              <div className="w-full mt-1">
-                <div className="h-2 rounded-full bg-white/5 overflow-hidden">
-                  <div
-                    className="h-full rounded-full gradient-primary transition-all duration-700"
-                    style={{
-                      width: `${{ slow: 33, medium: 66, fast: 100 }[movie.pace || "medium"]}%`,
-                    }}
-                  />
-                </div>
-                <div className="flex justify-between mt-1">
-                  <span className="text-[10px] text-muted-foreground">
-                    {t("pace_slow")}
-                  </span>
-                  <span className="text-[10px] text-muted-foreground">
-                    {t("pace_fast")}
-                  </span>
+        {movie.trailer_key && (
+          <section className="animate-slide-up">
+            <SectionHeader title="Trailer" />
+            <div
+              className="relative rounded-2xl overflow-hidden cursor-pointer hover-lift group"
+              onClick={() => setShowTrailer(true)}
+            >
+              <div className="aspect-video w-full bg-black/40">
+                <img
+                  src={`https://img.youtube.com/vi/${movie.trailer_key}/maxresdefault.jpg`}
+                  alt={`${movie.title} trailer`}
+                  className="w-full h-full object-cover opacity-80 group-hover:opacity-60 transition-opacity duration-300"
+                  onError={(e) => {
+                    const t = e.currentTarget;
+                    if (!t.src.includes("hqdefault")) {
+                      t.src = `https://img.youtube.com/vi/${movie.trailer_key}/hqdefault.jpg`;
+                    }
+                  }}
+                />
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="w-16 h-16 rounded-full bg-white/90 flex items-center justify-center shadow-2xl shadow-black/40 group-hover:scale-110 transition-transform duration-300">
+                    <Play className="w-7 h-7 text-black fill-black ml-1" />
+                  </div>
                 </div>
               </div>
+              <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent">
+                <p className="text-white font-semibold text-sm">
+                  {movie.title} — Official Trailer
+                </p>
+              </div>
             </div>
-          </div>
-        </section>
+          </section>
+        )}
+
+        {/* ============================================================ */}
+        {/*  3. QUICK DECISION — Community Vote                           */}
+        {/* ============================================================ */}
+        <QuickDecisionCard movieId={movieId} locale={locale} t={t} />
 
         {/* ============================================================ */}
         {/*  7. CAST                                                       */}
@@ -1464,9 +1998,9 @@ export default function MovieDetailPage() {
                     </div>
                     <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                     <div className="absolute bottom-0 left-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <p className="text-[10px] text-white/70 line-clamp-1">
+                      {/* <p className="text-[10px] text-white/70 line-clamp-1">
                         {person.character}
-                      </p>
+                      </p> */}
                     </div>
                   </div>
                   <p className="mt-1.5 text-xs font-medium text-foreground truncate group-hover:text-primary transition-colors">
@@ -1482,18 +2016,40 @@ export default function MovieDetailPage() {
         )}
 
         {/* ============================================================ */}
-        {/*  8. FILM SERUPA — genre/kategori sama, sort by popularity      */}
+        {/*  7b. CREW — 1 baris horizontal scroll seperti Cast           */}
         {/* ============================================================ */}
-        {movie.similar?.results && movie.similar.results.length > 0 && (
+        {crew.length > 0 && (
           <section className="animate-slide-up">
-            <SectionHeader title={t("similar")} />
-            <div className="flex gap-3 overflow-x-auto scrollbar-hide pb-2">
-              {movie.similar.results.slice(0, 12).map((m) => (
+            <SectionHeader
+              title={locale === "id" ? "Staf & Kru Film" : "Movie Crew & Staff"}
+            />
+            <div className="flex gap-4 overflow-x-auto scrollbar-hide pb-3 -mx-1 px-1">
+              {crew.map((person) => (
                 <div
-                  key={m.id}
-                  className="w-[140px] lg:w-[160px] flex-shrink-0"
+                  key={`${person.id}-${person.job}`}
+                  className="flex-shrink-0 w-[100px] lg:w-[120px] group"
                 >
-                  <MovieCard movie={m as never} />
+                  <div className="relative rounded-xl overflow-hidden hover-lift card-shine">
+                    <div className="aspect-[3/4]">
+                      <img
+                        src={getProfileUrl(person.profile_path)}
+                        alt={person.name}
+                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                      />
+                    </div>
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                    <div className="absolute bottom-0 left-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      {/* <p className="text-[10px] text-white/70 line-clamp-1">
+                        {person.job}
+                      </p> */}
+                    </div>
+                  </div>
+                  <p className="mt-1.5 text-xs font-medium text-foreground truncate group-hover:text-primary transition-colors">
+                    {person.name}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground truncate">
+                    {person.department}
+                  </p>
                 </div>
               ))}
             </div>
@@ -1501,7 +2057,40 @@ export default function MovieDetailPage() {
         )}
 
         {/* ============================================================ */}
-        {/*  9. REKOMENDASI — berdasarkan company & cast serupa            */}
+        {/*  8. FILM SERUPA — berdasarkan genre yang sama dari DB          */}
+        {/* ============================================================ */}
+        {(similarByGenre.length > 0 ||
+          (movie.similar?.results && movie.similar.results.length > 0)) && (
+          <section className="animate-slide-up">
+            <SectionHeader title={t("similar")} />
+            <div className="flex gap-3 overflow-x-auto scrollbar-hide pb-2">
+              {/* Prioritaskan similarByGenre dari DB, fallback ke TMDB similar */}
+              {(similarByGenre.length > 0
+                ? similarByGenre
+                : (movie.similar?.results ?? [])
+              )
+                .slice(0, 15)
+                .map((m) => (
+                  <div
+                    key={m.id}
+                    className="w-[140px] lg:w-[160px] flex-shrink-0"
+                  >
+                    <MovieCard movie={m as never} />
+                  </div>
+                ))}
+            </div>
+            {similarByGenre.length > 0 && movie.genres[0] && (
+              <p className="text-[10px] text-muted-foreground mt-2 text-center">
+                {locale === "id"
+                  ? `Film ${movie.genres[0].name} populer lainnya`
+                  : `More popular ${movie.genres[0].name} films`}
+              </p>
+            )}
+          </section>
+        )}
+
+        {/* ============================================================ */}
+        {/*  9. REKOMENDASI                                                */}
         {/* ============================================================ */}
         {recommendations.length > 0 && (
           <section className="animate-slide-up">

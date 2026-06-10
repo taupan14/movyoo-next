@@ -1,15 +1,16 @@
-'use client';
+"use client";
 
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { useI18n } from '@/hooks/use-locale';
-import { searchMovies } from '@/lib/tmdb';
-import { MovieCard } from '@/components/movie-card';
-import { cn } from '@/lib/utils';
-import { Search, X, Clock, TrendingUp, Loader as Loader2 } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback } from "react";
+import { useI18n } from "@/hooks/use-locale";
+import { searchMovies } from "@/lib/tmdb";
+import { MovieCard } from "@/components/movie-card";
+import { cn } from "@/lib/utils";
+import { Search, X, Clock, TrendingUp, Loader as Loader2 } from "lucide-react";
 
 interface Movie {
   id: number;
   title: string;
+  tmdb_id: number;
   poster_path: string | null;
   backdrop_path: string | null;
   vote_average: number;
@@ -19,11 +20,11 @@ interface Movie {
   overview?: string;
 }
 
-const RECENT_SEARCHES_KEY = 'movyoo-recent-searches';
+const RECENT_SEARCHES_KEY = "movyoo-recent-searches";
 const MAX_RECENT = 8;
 
 function getRecentSearches(): string[] {
-  if (typeof window === 'undefined') return [];
+  if (typeof window === "undefined") return [];
   try {
     const raw = localStorage.getItem(RECENT_SEARCHES_KEY);
     return raw ? JSON.parse(raw) : [];
@@ -33,21 +34,24 @@ function getRecentSearches(): string[] {
 }
 
 function addRecentSearch(query: string) {
-  if (typeof window === 'undefined') return;
+  if (typeof window === "undefined") return;
   const recent = getRecentSearches().filter((s) => s !== query);
   recent.unshift(query);
-  localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(recent.slice(0, MAX_RECENT)));
+  localStorage.setItem(
+    RECENT_SEARCHES_KEY,
+    JSON.stringify(recent.slice(0, MAX_RECENT)),
+  );
 }
 
 function removeRecentSearch(query: string): string[] {
-  if (typeof window === 'undefined') return [];
+  if (typeof window === "undefined") return [];
   const recent = getRecentSearches().filter((s) => s !== query);
   localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(recent));
   return recent;
 }
 
 function clearRecentSearches(): string[] {
-  if (typeof window === 'undefined') return [];
+  if (typeof window === "undefined") return [];
   localStorage.removeItem(RECENT_SEARCHES_KEY);
   return [];
 }
@@ -68,7 +72,7 @@ function SearchSkeleton() {
 
 export default function SearchPage() {
   const { t, locale, region } = useI18n();
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState("");
   const [results, setResults] = useState<Movie[]>([]);
   const [loading, setLoading] = useState(false);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
@@ -94,16 +98,16 @@ export default function SearchPage() {
       }
       setLoading(true);
       try {
-        const lang = locale === 'id' ? 'id' : 'en';
+        const lang = locale === "id" ? "id" : "en";
         const data = await searchMovies(searchQuery.trim(), lang, region);
         setResults(data.results || []);
       } catch (err) {
-        console.error('Search failed:', err);
+        console.error("Search failed:", err);
         setResults([]);
       }
       setLoading(false);
     },
-    [locale, region]
+    [locale, region],
   );
 
   const handleInputChange = (value: string) => {
@@ -137,13 +141,13 @@ export default function SearchPage() {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && query.trim()) {
+    if (e.key === "Enter" && query.trim()) {
       handleSearch(query);
     }
   };
 
   const handleClear = () => {
-    setQuery('');
+    setQuery("");
     setResults([]);
     setHasSearched(false);
     setLoading(false);
@@ -166,10 +170,10 @@ export default function SearchPage() {
       {/* Header */}
       <div className="animate-fade-in mb-6">
         <h1 className="text-2xl lg:text-3xl font-bold text-foreground mb-1">
-          {t('nav_search')}
+          {t("nav_search")}
         </h1>
         <p className="text-muted-foreground text-sm">
-          {t('search_placeholder')}
+          {t("search_placeholder")}
         </p>
       </div>
 
@@ -183,13 +187,13 @@ export default function SearchPage() {
             value={query}
             onChange={(e) => handleInputChange(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={t('search_placeholder')}
+            placeholder={t("search_placeholder")}
             className={cn(
-              'w-full h-14 pl-12 pr-12 rounded-2xl text-base',
-              'bg-white/5 border border-white/10',
-              'text-foreground placeholder:text-muted-foreground',
-              'focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/50',
-              'backdrop-blur-xl transition-all duration-300'
+              "w-full h-14 pl-12 pr-12 rounded-2xl text-base",
+              "bg-white/5 border border-white/10",
+              "text-foreground placeholder:text-muted-foreground",
+              "focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/50",
+              "backdrop-blur-xl transition-all duration-300",
             )}
           />
           {loading && (
@@ -213,14 +217,14 @@ export default function SearchPage() {
             <div className="flex items-center gap-2">
               <Clock className="w-4 h-4 text-muted-foreground" />
               <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                {locale === 'id' ? 'Pencarian Terakhir' : 'Recent Searches'}
+                {locale === "id" ? "Pencarian Terakhir" : "Recent Searches"}
               </h2>
             </div>
             <button
               onClick={handleClearRecent}
               className="text-xs text-primary hover:text-primary/80 font-medium transition-colors"
             >
-              {locale === 'id' ? 'Hapus Semua' : 'Clear All'}
+              {locale === "id" ? "Hapus Semua" : "Clear All"}
             </button>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -253,12 +257,12 @@ export default function SearchPage() {
             <TrendingUp className="w-8 h-8 text-primary" />
           </div>
           <h3 className="text-lg font-semibold text-foreground mb-2">
-            {locale === 'id' ? 'Mulai Cari Film' : 'Start Searching Movies'}
+            {locale === "id" ? "Mulai Cari Film" : "Start Searching Movies"}
           </h3>
           <p className="text-sm text-muted-foreground max-w-xs">
-            {locale === 'id'
-              ? 'Ketik judul film yang ingin kamu cari di atas'
-              : 'Type a movie title you want to search above'}
+            {locale === "id"
+              ? "Ketik judul film yang ingin kamu cari di atas"
+              : "Type a movie title you want to search above"}
           </p>
         </div>
       )}
@@ -272,7 +276,7 @@ export default function SearchPage() {
           {results.length > 0 ? (
             <>
               <p className="text-sm text-muted-foreground mb-4">
-                {locale === 'id'
+                {locale === "id"
                   ? `${results.length} hasil ditemukan`
                   : `${results.length} results found`}
               </p>
@@ -294,10 +298,10 @@ export default function SearchPage() {
                 <Search className="w-8 h-8 text-muted-foreground" />
               </div>
               <h3 className="text-lg font-semibold text-foreground mb-2">
-                {t('no_results')}
+                {t("no_results")}
               </h3>
               <p className="text-sm text-muted-foreground max-w-xs">
-                {locale === 'id'
+                {locale === "id"
                   ? `Tidak ditemukan film untuk "${query}"`
                   : `No movies found for "${query}"`}
               </p>

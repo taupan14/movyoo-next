@@ -9,10 +9,12 @@
  * - Data film (movies) lengkap dengan budget, revenue, release_date
  * - Genres (movie_genres → genres)
  * - Cast (movie_cast)
+ * - Crew (movie_crew) — Sutradara, Produser, Penulis, Kamera, Suara, dll.
+ * - Production companies (movie_companies → production_companies)
  * - Watch providers — Streaming & Sewa/Beli (movie_platforms → platforms)
  * - Cinema data — Bioskop yang sedang menayangkan film (cinema_movies → cinemas)
  * - Trailer key
- * - Similar movies — film dengan genre/kategori sama, sort by popularity
+ * - Similar movies — film dengan genre UTAMA yang sama dari DB, sort by popularity (limit 15)
  * - Recommendations — prioritas: cast serupa → companies sama → platforms sama (quota 12)
  */
 
@@ -65,6 +67,8 @@ export async function GET(
 
   const [
     castRes,
+    crewRes,
+    productionCompaniesRes,
     platformRes,
     cinemaRes,
     similarRes,
@@ -78,6 +82,20 @@ export async function GET(
       .eq("movie_id", internalId)
       .order("order_index", { ascending: true })
       .limit(20),
+
+    // Crew — semua kru film (Sutradara, Produser, Penulis, Kamera, dll.)
+    supabase
+      .from("movie_crew")
+      .select("person_id, name, job, department, profile_path")
+      .eq("movie_id", internalId),
+
+    // Production companies — join movie_companies → production_companies
+    supabase
+      .from("movie_companies")
+      .select(
+        "production_companies ( id, tmdb_company_id, name, logo_path, origin_country )",
+      )
+      .eq("movie_id", internalId),
 
     // All platforms (streaming + rent + buy) — termasuk url & logo_path
     supabase
@@ -100,21 +118,23 @@ export async function GET(
       .gte("show_date", today)
       .order("show_date", { ascending: true }),
 
-    // Similar — film dengan genre yang sama, sort by popularity
+    // Similar — film dengan genre UTAMA yang sama (genre_id pertama), sort by popularity
+    // Menggunakan genre utama saja agar hasil lebih presisi & relevan
     genreIds.length > 0
       ? supabase
           .from("movie_genres")
           .select(
             `
+            movie_id,
             movies (
               id, tmdb_id, title, poster_path, backdrop_path,
               vote_average, release_date, popularity
             )
           `,
           )
-          .in("genre_id", genreIds)
+          .eq("genre_id", genreIds[0])
           .neq("movie_id", internalId)
-          .limit(80)
+          .limit(60)
       : Promise.resolve({ data: [], error: null }),
 
     // Companies milik film ini (untuk rekomendasi tier-2)
@@ -138,6 +158,47 @@ export async function GET(
     profile_path: c.profile_path,
     order: c.order_index,
   }));
+
+  // ── 3b. Shape crew ────────────────────────────────────────────────────────
+  //
+  // Dikelompokkan per department; frontend bisa filter lebih lanjut.
+  // Duplikasi person_id diizinkan (satu orang bisa punya banyak job).
+  const crew = (crewRes.data ?? []).map((c: any) => ({
+    id: c.person_id,
+    name: c.name,
+    job: c.job,
+    department: c.department ?? "Other",
+    profile_path: c.profile_path,
+  }));
+
+  // Shorthand derived dari crew — dimasukkan ke credits agar frontend
+  // bisa langsung destructure tanpa filter ulang
+  const directors = crew.filter((c) => c.job === "Director");
+  const producers = crew.filter(
+    (c) => c.job === "Producer" || c.job === "Executive Producer",
+  );
+  const writers = crew.filter(
+    (c) =>
+      c.job === "Screenplay" ||
+      c.job === "Writer" ||
+      c.job === "Story" ||
+      c.department === "Writing",
+  );
+
+  // ── 3c. Shape production companies ───────────────────────────────────────
+  const TMDB_IMG_BASE = "https://image.tmdb.org/t/p/original";
+
+  const productionCompanies = (productionCompaniesRes.data ?? [])
+    .map((row: any) => row.production_companies)
+    .filter(Boolean)
+    .map((pc: any) => ({
+      id: pc.id,
+      name: pc.name,
+      logo_path: pc.logo_path ?? null,
+      // logo_url siap pakai untuk <img src> tanpa kalkulasi di frontend
+      logo_url: pc.logo_path ? `${TMDB_IMG_BASE}${pc.logo_path}` : null,
+      origin_country: pc.origin_country ?? "",
+    }));
 
   // Person ids untuk rekomendasi (ambil 5 pemeran utama)
   const mainCastPersonIds: number[] = cast
@@ -350,6 +411,10 @@ export async function GET(
   const isShowingInCinema = cinemas.length > 0;
 
   // ── 7. Deduplicate & sort similar ─────────────────────────────────────────
+  //
+  // Menggunakan genre utama (genreIds[0]) → hasil lebih presisi.
+  // Sort by popularity descending, limit 15.
+  //
   function deduplicateMovies(rows: any[], limit: number) {
     const seen = new Set<number>();
     const result: any[] = [];
@@ -374,9 +439,7 @@ export async function GET(
     return result;
   }
 
-  const similar = deduplicateMovies(similarRes.data ?? [], 12);
-
-  // recommendations sudah dihitung di atas via tiered logic
+  const similar = deduplicateMovies(similarRes.data ?? [], 15);
 
   // ── 8. Shape genres ───────────────────────────────────────────────────────
   const genres = (movieRaw.movie_genres ?? [])
@@ -392,6 +455,7 @@ export async function GET(
 
   // ── 10. Assemble response ─────────────────────────────────────────────────
   const movie = {
+    _internalId: internalId,
     id: movieRaw.tmdb_id,
     title: movieRaw.title,
     original_title: movieRaw.original_title,
@@ -409,7 +473,17 @@ export async function GET(
     status: movieRaw.status,
     trailer_key: movieRaw.trailer_key,
     genres,
-    credits: { cast },
+    credits: {
+      cast,
+      // Seluruh crew — frontend filter per department/job
+      crew,
+      // Shorthand untuk Sinopsis card (sutradara, produser, penulis)
+      directors,
+      producers,
+      writers,
+    },
+    // Production companies — untuk Rumah Produksi di card Sinopsis
+    production_companies: productionCompanies,
     // Watch/providers — format TMDB-compatible, semua region tersedia
     "watch/providers": {
       results: platformsByRegion,

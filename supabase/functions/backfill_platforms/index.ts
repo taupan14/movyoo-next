@@ -159,11 +159,15 @@ async function backfillMoviePlatforms(
     { items: providers.results?.["ID"]?.flatrate ?? [], type: "streaming" },
     { items: providers.results?.["ID"]?.rent ?? [], type: "rent" },
     { items: providers.results?.["ID"]?.buy ?? [], type: "buy" },
+    { items: providers.results?.["ID"]?.buy ?? [], type: "free" },
   ];
 
   const hasAny = platformSources.some((s) => s.items.length > 0);
   if (!hasAny) {
-    console.log(`[backfill] No ID providers — "${movie.title}"`);
+    const availableRegions = Object.keys(providers.results || {});
+    console.log(
+      `[backfill] No providers for ID — "${movie.title}" (available: ${availableRegions.join(", ")})`,
+    );
     return { inserted: 0, skipped: 0 };
   }
 

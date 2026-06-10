@@ -15,6 +15,8 @@ export interface CachedMovie {
   release_date?: string;
   popularity?: number;
   overview?: string;
+  genre_ids?: number[]; // tmdb_genre_id[]
+  trailer?: string | null; // YouTube video id
 }
 
 export interface PlatformItem {
@@ -54,23 +56,31 @@ async function fetchCategory(
   category: Category,
   lang: string,
   region: string,
+  ascending: boolean,
   limit = 15,
 ): Promise<CachedMovie[]> {
-  const { data, error } = await supabase
+  let query = supabase
     .from("movie_categories")
     .select(
       `
-      sort_order,
-      movies (
-        id, tmdb_id, title, poster_path, backdrop_path,
-        vote_average, release_date, popularity, overview, overview_en
-      )
-    `,
+    sort_order,
+    updated_at,
+    movies (
+      id, tmdb_id, title, original_title, original_language, poster_path, backdrop_path,
+      vote_average, release_date, popularity, overview, overview_en
+    )
+  `,
     )
     .eq("category", category)
-    .eq("region", region)
-    .order("sort_order", { ascending: true })
-    .limit(limit);
+    .eq("region", region);
+
+  if (category === "upcoming") {
+    query = query.order("updated_at", { ascending });
+  } else {
+    query = query.order("sort_order", { ascending });
+  }
+
+  const { data, error } = await query.limit(limit);
 
   if (error) {
     console.error(`[movies-db] fetchCategory(${category}):`, error.message);
@@ -86,6 +96,42 @@ async function fetchCategory(
       return {
         id: m.id,
         tmdb_id: m.tmdb_id,
+        title: m.original_language === "id" ? m.original_title : m.title,
+        poster_path: m.poster_path,
+        backdrop_path: m.backdrop_path,
+        vote_average: Number(m.vote_average),
+        release_date: m.release_date,
+        popularity: Number(m.popularity),
+        overview: pickOverview(m, lang),
+      };
+    })
+    .filter(Boolean) as CachedMovie[];
+}
+
+async function fetchCategoryNowPlaying(
+  lang: string,
+  region: string,
+  limit = 12,
+): Promise<CachedMovie[]> {
+  const { data, error } = await supabase
+    .rpc("get_latest_movies_21cineplex", { p_limit: limit })
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error(`[cinema-db] fetchCategory(now_playing):`, error.message);
+    return [];
+  }
+
+  // console.log(`[cinema-db] fetchCategory(now_playing): ${data?.length} items`);
+  // console.log(data);
+  return (data ?? [])
+    .map((row: any) => {
+      const m = row;
+
+      if (!m) return null;
+      return {
+        id: m.movie_id,
+        tmdb_id: m.tmdb_id,
         title: m.title,
         poster_path: m.poster_path,
         backdrop_path: m.backdrop_path,
@@ -99,16 +145,85 @@ async function fetchCategory(
 }
 
 async function fetchIndonesian(
+  category: string,
+  lang: string,
+  limit = 15,
+): Promise<CachedMovie[]> {
+  let query = supabase
+    .from("movies")
+    .select(
+      `
+      id,
+      tmdb_id,
+      title,
+      original_title,
+      original_language,
+      poster_path,
+      backdrop_path,
+      vote_average,
+      vote_count,
+      release_date,
+      popularity,
+      overview,
+      overview_en
+      `,
+    )
+    .eq("original_language", "id")
+    .gt("tmdb_id", 0);
+
+  switch (category) {
+    case "top_rated":
+      query = query
+        .order("vote_count", { ascending: false })
+        .order("vote_average", { ascending: false });
+      break;
+
+    case "popularity":
+      query = query
+        .order("vote_count", { ascending: false })
+        .order("popularity", { ascending: false });
+      break;
+
+    default:
+      query = query
+        .order("release_date", { ascending: false })
+        .order("vote_count", { ascending: false });
+      break;
+  }
+
+  query = query.limit(limit);
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error("[movies-db] fetchIndonesian:", error.message);
+    return [];
+  }
+
+  return (data ?? []).map((m: any) => ({
+    id: m.id,
+    tmdb_id: m.tmdb_id,
+    title: m.original_language === "id" ? m.original_title || m.title : m.title,
+    poster_path: m.poster_path,
+    backdrop_path: m.backdrop_path,
+    vote_average: Number(m.vote_average),
+    vote_count: Number(m.vote_count),
+    release_date: m.release_date,
+    popularity: Number(m.popularity),
+    overview: pickOverview(m, lang),
+  }));
+}
+
+async function fetchRecommended(
   lang: string,
   limit = 15,
 ): Promise<CachedMovie[]> {
   const { data, error } = await supabase
     .from("movies")
     .select(
-      "id, tmdb_id, title, poster_path, backdrop_path, vote_average, release_date, popularity, overview, overview_en",
+      "id, tmdb_id, title, poster_path, backdrop_path, vote_average, release_date, budget, revenue, popularity, overview, overview_en",
     )
-    .eq("original_language", "id")
-    .order("release_date", { ascending: false })
+    .order("revenue", { ascending: false })
     .limit(limit);
 
   if (error) {
@@ -130,24 +245,34 @@ async function fetchIndonesian(
 }
 
 export async function fetchHomeMovies(lang: string, region: string) {
-  const [trendingRes, nowPlayingRes, upcomingRes, popularRes, indonesianRes] =
-    await Promise.allSettled([
-      fetchCategory("trending", lang, region, 25),
-      fetchCategory("now_playing", lang, region, 15),
-      fetchCategory("upcoming", lang, region, 15),
-      fetchCategory("popular", lang, region, 15),
-      fetchIndonesian(lang, 25),
-    ]);
+  const [
+    trendingRes,
+    nowPlayingRes,
+    upcomingRes,
+    popularRes,
+    indonesianRes,
+    indonesianPopRes,
+  ] = await Promise.allSettled([
+    fetchCategory("trending", lang, region, true, 10),
+    fetchCategoryNowPlaying(lang, region, 20),
+    fetchCategory("upcoming", lang, region, false, 20),
+    // fetchRecommended(lang, 20),
+    fetchCategory("popular", lang, region, true, 20),
+    fetchIndonesian("release_date", lang, 20),
+    fetchIndonesian("popularity", lang, 15),
+  ]);
 
   return {
     trending: trendingRes.status === "fulfilled" ? trendingRes.value : [],
     nowPlaying: nowPlayingRes.status === "fulfilled" ? nowPlayingRes.value : [],
     upcoming: upcomingRes.status === "fulfilled" ? upcomingRes.value : [],
-    popular: popularRes.status === "fulfilled" ? popularRes.value : [],
+    bestSeller: popularRes.status === "fulfilled" ? popularRes.value : [],
     indonesianMovies:
       indonesianRes.status === "fulfilled" ? indonesianRes.value : [],
-    netflixTrending: [] as CachedMovie[],
-    disneyTrending: [] as CachedMovie[],
+    indonesianPopularMovies:
+      indonesianPopRes.status === "fulfilled" ? indonesianPopRes.value : [],
+    // netflixTrending: [] as CachedMovie[],
+    // disneyTrending: [] as CachedMovie[],
   };
 }
 
@@ -155,11 +280,18 @@ export async function fetchHomeMovies(lang: string, region: string) {
 
 export interface ExploreParams {
   lang: string;
-  platform: string; // 'all' | platform slug
-  genreId: number | null;
-  sort: string; // 'release_date' | 'popular' | 'top_rated' | 'now_playing' | 'coming_soon'
+  platforms: string[]; // [] = all, atau array slug platform
+  genreIds: number[]; // [] = all, atau array tmdb_genre_id
+  sort: string; // 'release_date' | 'popular' | 'top_rated'
   page: number;
   limit: number;
+  search?: string;
+  yearFrom?: number | null;
+  yearTo?: number | null;
+  companyId?: number | null;
+  voteMin?: number | null;
+  voteMax?: number | null;
+  originalLanguage?: string;
 }
 
 export interface ExploreResult {
@@ -167,183 +299,6 @@ export interface ExploreResult {
   total: number;
   page: number;
   totalPages: number;
-}
-
-export async function fetchExploreMovies(
-  params: ExploreParams,
-): Promise<ExploreResult> {
-  const { lang, platform, genreId, sort, page, limit } = params;
-  const offset = (page - 1) * limit;
-
-  // ── 1. Tentukan movie_id set dari filter platform ──────────────────────────
-  let platformMovieIds: number[] | null = null; // null = tidak difilter
-
-  if (platform !== "all") {
-    // Khusus bahasa asli (bukan platform OTT)
-    if (platform === "indonesian" || platform === "korean") {
-      const langCode = platform === "indonesian" ? "id" : "ko";
-      const { data } = await supabase
-        .from("movies")
-        .select("id")
-        .eq("original_language", langCode)
-        .limit(500);
-      platformMovieIds = (data ?? []).map((r: any) => r.id);
-    } else {
-      // Platform OTT / Bioskop: join movie_platforms → platforms
-      const { data: platRow } = await supabase
-        .from("platforms")
-        .select("id")
-        .eq("slug", platform)
-        .single();
-
-      if (platRow?.id) {
-        const { data } = await supabase
-          .from("movie_platforms")
-          .select("movie_id")
-          .eq("platform_id", platRow.id)
-          .eq("region", "ID")
-          .limit(500);
-        platformMovieIds = (data ?? []).map((r: any) => r.movie_id);
-      } else {
-        platformMovieIds = []; // platform tidak ditemukan → kosong
-      }
-    }
-  }
-
-  // ── 2. Tentukan movie_id set dari filter genre ─────────────────────────────
-  let genreMovieIds: number[] | null = null;
-
-  if (genreId !== null) {
-    // genres.tmdb_genre_id → genres.id → movie_genres.movie_id
-    const { data: genreRow } = await supabase
-      .from("genres")
-      .select("id")
-      .eq("tmdb_genre_id", genreId)
-      .single();
-
-    if (genreRow?.id) {
-      const { data } = await supabase
-        .from("movie_genres")
-        .select("movie_id")
-        .eq("genre_id", genreRow.id)
-        .limit(500);
-      genreMovieIds = (data ?? []).map((r: any) => r.movie_id);
-    } else {
-      genreMovieIds = [];
-    }
-  }
-
-  // ── 3. Intersect id sets ───────────────────────────────────────────────────
-  let filteredIds: number[] | null = null;
-
-  if (platformMovieIds !== null && genreMovieIds !== null) {
-    const genreSet = new Set(genreMovieIds);
-    filteredIds = platformMovieIds.filter((id) => genreSet.has(id));
-  } else if (platformMovieIds !== null) {
-    filteredIds = platformMovieIds;
-  } else if (genreMovieIds !== null) {
-    filteredIds = genreMovieIds;
-  }
-
-  // ── 4. Build query utama ───────────────────────────────────────────────────
-  let query = supabase
-    .from("movies")
-    .select(
-      "id, title, poster_path, backdrop_path, vote_average, release_date, popularity, overview, overview_en",
-      { count: "exact" },
-    );
-
-  // Filter by id set
-  if (filteredIds !== null) {
-    if (filteredIds.length === 0) {
-      return { movies: [], total: 0, page, totalPages: 0 };
-    }
-    query = query.in("id", filteredIds);
-  }
-
-  // Filter by sort → category tertentu
-  if (sort === "now_playing" || sort === "coming_soon") {
-    // Ambil dari movie_categories agar konsisten dengan home
-    const category = sort === "now_playing" ? "now_playing" : "upcoming";
-    const { data: catData } = await supabase
-      .from("movie_categories")
-      .select("movie_id")
-      .eq("category", category)
-      .eq("region", "ID")
-      .limit(200);
-    const catIds = (catData ?? []).map((r: any) => r.movie_id);
-
-    if (filteredIds !== null) {
-      // Intersect lagi
-      const catSet = new Set(catIds);
-      const intersected = filteredIds.filter((id) => catSet.has(id));
-      if (intersected.length === 0)
-        return { movies: [], total: 0, page, totalPages: 0 };
-      query = supabase
-        .from("movies")
-        .select(
-          "id, title, poster_path, backdrop_path, vote_average, release_date, popularity, overview, overview_en",
-          { count: "exact" },
-        )
-        .in("id", intersected);
-    } else {
-      if (catIds.length === 0)
-        return { movies: [], total: 0, page, totalPages: 0 };
-      query = supabase
-        .from("movies")
-        .select(
-          "id, title, poster_path, backdrop_path, vote_average, release_date, popularity, overview, overview_en",
-          { count: "exact" },
-        )
-        .in("id", catIds);
-    }
-  }
-
-  // Sort
-  switch (sort) {
-    case "top_rated":
-      query = query.order("vote_average", { ascending: false });
-      break;
-    case "popular":
-      query = query.order("popularity", { ascending: false });
-      break;
-    case "release_date":
-    case "coming_soon":
-      query = query
-        .not("release_date", "is", null)
-        .order("release_date", { ascending: false });
-      break;
-    case "now_playing":
-    default:
-      query = query.order("popularity", { ascending: false });
-  }
-
-  // Pagination
-  query = query.range(offset, offset + limit - 1);
-
-  const { data, error, count } = await query;
-
-  if (error) {
-    console.error("[movies-db] fetchExploreMovies:", error.message);
-    return { movies: [], total: 0, page, totalPages: 0 };
-  }
-
-  const total = count ?? 0;
-  const totalPages = Math.ceil(total / limit);
-
-  const movies: CachedMovie[] = (data ?? []).map((m: any) => ({
-    id: m.id,
-    tmdb_id: m.tmdb_id,
-    title: m.title,
-    poster_path: m.poster_path,
-    backdrop_path: m.backdrop_path,
-    vote_average: Number(m.vote_average),
-    release_date: m.release_date,
-    popularity: Number(m.popularity),
-    overview: pickOverview(m, lang),
-  }));
-
-  return { movies, total, page, totalPages };
 }
 
 // ─── PLATFORMS ────────────────────────────────────────────────────────────────
@@ -374,4 +329,293 @@ export async function fetchGenresFromDb(): Promise<GenreItem[]> {
     return [];
   }
   return data ?? [];
+}
+
+// ─── TAMBAHKAN ke movies-db.ts ────────────────────────────────────────────────
+// Paste fungsi ini di bagian bawah file movies-db.ts yang sudah ada
+
+export interface MoodMoviesParams {
+  lang: string;
+  region: string;
+  genreIds: number[];
+  page: number;
+  limit: number;
+}
+
+export interface MoodMoviesResult {
+  movies: CachedMovie[];
+  page: number;
+  totalPages: number;
+  total: number;
+}
+
+export async function fetchMoodMoviesPaginated(
+  params: MoodMoviesParams,
+): Promise<MoodMoviesResult> {
+  const { lang, genreIds, page, limit } = params;
+  const offset = (page - 1) * limit;
+
+  // Ambil movie_id yang memiliki genre sesuai mood
+  const { data: genreRows } = await supabase
+    .from("genres")
+    .select("id")
+    .in("tmdb_genre_id", genreIds);
+
+  const genreDbIds = (genreRows ?? []).map((r: any) => r.id);
+
+  if (!genreDbIds.length) {
+    return { movies: [], page, totalPages: 0, total: 0 };
+  }
+
+  // Ambil movie_ids yang match dengan genre tersebut
+  const { data: movieGenreRows } = await supabase
+    .from("movie_genres")
+    .select("movie_id")
+    .in("genre_id", genreDbIds)
+    .limit(2000);
+
+  const movieIds = [
+    ...new Set((movieGenreRows ?? []).map((r: any) => r.movie_id)),
+  ];
+
+  if (!movieIds.length) {
+    return { movies: [], page, totalPages: 0, total: 0 };
+  }
+
+  // Query utama dengan pagination
+  const { data, error, count } = await supabase
+    .from("movies")
+    .select(
+      "id, tmdb_id, title, original_title, original_language, poster_path, backdrop_path, vote_average, release_date, popularity, overview, overview_en",
+      { count: "exact" },
+    )
+    .in("id", movieIds)
+    .not("poster_path", "is", null)
+    .order("popularity", { ascending: false })
+    .range(offset, offset + limit - 1);
+
+  if (error) {
+    console.error("[movies-db] fetchMoodMoviesPaginated:", error.message);
+    return { movies: [], page, totalPages: 0, total: 0 };
+  }
+
+  const total = count ?? 0;
+  const totalPages = Math.ceil(total / limit);
+
+  const movies: CachedMovie[] = (data ?? []).map((m: any) => ({
+    id: m.id,
+    tmdb_id: m.tmdb_id,
+    title: m.original_language === "id" ? m.original_title : m.title,
+    poster_path: m.poster_path,
+    backdrop_path: m.backdrop_path,
+    vote_average: Number(m.vote_average),
+    release_date: m.release_date,
+    popularity: Number(m.popularity),
+    overview: pickOverview(m, lang),
+  }));
+
+  return { movies, page, totalPages, total };
+}
+
+// ─── TAMBAHAN untuk movies-db.ts ─────────────────────────────────────────────
+
+export async function fetchExploreMovies(
+  params: ExploreParams,
+): Promise<ExploreResult> {
+  const {
+    lang,
+    platforms,
+    genreIds,
+    sort,
+    page,
+    limit,
+    search,
+    yearFrom,
+    yearTo,
+    companyId,
+    voteMin,
+    voteMax,
+    originalLanguage,
+  } = params;
+  const offset = (page - 1) * limit;
+
+  // ── 1. Platform filter → union movie_id dari semua platform yang dipilih ──
+  //    Multi platform = OR logic
+  let platformMovieIds: number[] | null = null;
+
+  if (platforms.length > 0) {
+    const { data: platRows } = await supabase
+      .from("platforms")
+      .select("id")
+      .in("slug", platforms);
+
+    const platIds = (platRows ?? []).map((r: any) => r.id);
+
+    if (platIds.length > 0) {
+      const { data } = await supabase
+        .from("movie_platforms")
+        .select("movie_id")
+        .in("platform_id", platIds)
+        .eq("region", "ID")
+        .limit(5000);
+      const set = new Set((data ?? []).map((r: any) => r.movie_id));
+      platformMovieIds = Array.from(set);
+    } else {
+      platformMovieIds = [];
+    }
+  }
+
+  // ── 2. Genre filter → intersect movie_id dari semua genre yang dipilih ───
+  //    Multi genre = AND logic (film harus punya semua genre)
+  let genreMovieIds: number[] | null = null;
+
+  if (genreIds.length > 0) {
+    const { data: genreRows } = await supabase
+      .from("genres")
+      .select("id")
+      .in("tmdb_genre_id", genreIds);
+
+    const internalGenreIds = (genreRows ?? []).map((r: any) => r.id);
+
+    if (internalGenreIds.length > 0) {
+      const perGenre = await Promise.all(
+        internalGenreIds.map((gid) =>
+          supabase
+            .from("movie_genres")
+            .select("movie_id")
+            .eq("genre_id", gid)
+            .limit(5000)
+            .then(
+              (res) => new Set((res.data ?? []).map((r: any) => r.movie_id)),
+            ),
+        ),
+      );
+
+      let intersection = perGenre[0];
+      for (let i = 1; i < perGenre.length; i++) {
+        intersection = new Set(
+          [...intersection].filter((id) => perGenre[i].has(id)),
+        );
+      }
+      genreMovieIds = Array.from(intersection);
+    } else {
+      genreMovieIds = [];
+    }
+  }
+
+  // ── 3. Company filter → set of movie_ids ────────────────────────────────
+  let companyMovieIds: number[] | null = null;
+  if (companyId !== null && companyId !== undefined) {
+    const { data } = await supabase
+      .from("movie_companies")
+      .select("movie_id")
+      .eq("company_id", companyId)
+      .limit(5000);
+    companyMovieIds = (data ?? []).map((r: any) => r.movie_id);
+  }
+
+  // ── 4. Intersect semua id sets ───────────────────────────────────────────
+  const idSets = [platformMovieIds, genreMovieIds, companyMovieIds].filter(
+    (s): s is number[] => s !== null,
+  );
+
+  let filteredIds: number[] | null = null;
+  if (idSets.length > 0) {
+    filteredIds = idSets.reduce((acc, cur) => {
+      const curSet = new Set(cur);
+      return acc.filter((id) => curSet.has(id));
+    });
+  }
+
+  if (filteredIds !== null && filteredIds.length === 0) {
+    return { movies: [], total: 0, page, totalPages: 0 };
+  }
+
+  // ── 5. Build main query ──────────────────────────────────────────────────
+  let query = supabase
+    .from("movies")
+    .select(
+      "id, tmdb_id, title, original_title, original_language, poster_path, backdrop_path, vote_average, release_date, popularity, overview, overview_en, trailer_key, movie_genres(genres(tmdb_genre_id))",
+      { count: "exact" },
+    )
+    // Poin 1: hanya tampilkan data dengan tmdb_id valid (> 0)
+    .gt("tmdb_id", 0);
+
+  if (filteredIds !== null) {
+    query = query.in("id", filteredIds);
+  }
+
+  // Search
+  if (search && search.trim().length > 0) {
+    const q = search.trim();
+    query = query.or(`title.ilike.%${q}%,original_title.ilike.%${q}%`);
+  }
+
+  // Year range
+  if (yearFrom) {
+    query = query.gte("release_date", `${yearFrom}-01-01`);
+  }
+  if (yearTo) {
+    query = query.lte("release_date", `${yearTo}-12-31`);
+  }
+
+  // Vote average range
+  if (voteMin !== null && voteMin !== undefined) {
+    query = query.gte("vote_average", voteMin);
+  }
+  if (voteMax !== null && voteMax !== undefined) {
+    query = query.lte("vote_average", voteMax);
+  }
+
+  // Original language filter
+  if (originalLanguage) {
+    query = query.eq("original_language", originalLanguage);
+  }
+
+  // Sort
+  switch (sort) {
+    case "top_rated":
+      query = query.order("vote_average", { ascending: false });
+      break;
+    case "popular":
+      query = query
+        .order("vote_count", { ascending: false })
+        .order("popularity", { ascending: false });
+      break;
+    default:
+      query = query
+        .order("release_date", { ascending: false })
+        .order("vote_count", { ascending: false });
+      break;
+  }
+
+  query = query.range(offset, offset + limit - 1);
+
+  const { data, error, count } = await query;
+
+  if (error) {
+    console.error("[movies-db] fetchExploreMovies:", error.message);
+    return { movies: [], total: 0, page, totalPages: 0 };
+  }
+
+  const total = count ?? 0;
+  const totalPages = Math.ceil(total / limit);
+
+  const movies: CachedMovie[] = (data ?? []).map((m: any) => ({
+    id: m.id,
+    tmdb_id: m.tmdb_id,
+    title: m.original_language === "id" ? m.original_title || m.title : m.title,
+    poster_path: m.poster_path,
+    backdrop_path: m.backdrop_path,
+    vote_average: Number(m.vote_average),
+    release_date: m.release_date,
+    popularity: Number(m.popularity),
+    overview: pickOverview(m, lang),
+    genre_ids: (m.movie_genres ?? [])
+      .map((mg: any) => mg.genres?.tmdb_genre_id)
+      .filter(Boolean) as number[],
+    trailer: m.trailer_key ?? null,
+  }));
+
+  return { movies, total, page, totalPages };
 }

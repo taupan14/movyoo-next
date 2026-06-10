@@ -1,0 +1,164 @@
+# .github/workflows/swipe-workers.yml
+#
+# GitHub Actions untuk menjalankan 3 Supabase Edge Function worker secara terjadwal.
+#
+# Schedule:
+#   refresh-guest-pool   → setiap hari    pukul 00:00 UTC
+#   process-reco-jobs    → setiap 12 jam  (00:00 & 12:00 UTC)
+#
+# Manual trigger tersedia untuk semua worker via workflow_dispatch.
+#
+# Secrets yang harus diset di GitHub → Settings → Secrets and variables → Actions:
+#   SUPABASE_SERVICE_ROLE_KEY  → sudah ada dari workflow tmdb-sync.yml
+
+name: Swipe Pick Workers
+
+on:
+  schedule:
+    # Guest pool refresh — setiap hari 00:00 UTC
+    - cron: "0 0 * * *"
+    # Reco jobs processor — setiap 12 jam
+    - cron: "0 0,12 * * *"
+
+  # Trigger manual dari GitHub Actions UI
+  workflow_dispatch:
+    inputs:
+      worker:
+        description: "Worker to run"
+        required: true
+        type: choice
+        options:
+          - all
+          - refresh-guest-pool
+          - process-reco-jobs
+          - generate-user-pool
+      userId:
+        description: "User ID (hanya untuk generate-user-pool)"
+        required: false
+        type: string
+
+env:
+  SUPABASE_URL: https://xlfchtwebtehpuiaqush.supabase.co
+
+# ─── Jobs ─────────────────────────────────────────────────────────────────────
+
+jobs:
+  # ── 1. Refresh guest pool ──────────────────────────────────────────────────
+  refresh-guest-pool:
+    name: Refresh Guest Pool
+    runs-on: ubuntu-latest
+
+    # Jalankan jika:
+    #   - Schedule jam 00:00 (cron pertama)
+    #   - Manual trigger dengan worker = 'all' atau 'refresh-guest-pool'
+    if: |
+      (github.event_name == 'schedule' && (
+        startsWith(github.event.schedule, '0 0 *')
+      )) ||
+      (github.event_name == 'workflow_dispatch' && (
+        github.event.inputs.worker == 'all' ||
+        github.event.inputs.worker == 'refresh-guest-pool'
+      ))
+
+    steps:
+      - name: Invoke refresh-guest-pool
+        run: |
+          echo "Calling refresh-guest-pool..."
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            -X POST \
+            "${{ env.SUPABASE_URL }}/functions/v1/refresh-guest-pool" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "Content-Type: application/json")
+
+          HTTP_BODY=$(echo "$RESPONSE" | head -n -1)
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n 1)
+
+          echo "Status: $HTTP_CODE"
+          echo "Response: $HTTP_BODY"
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "Worker failed with status $HTTP_CODE"
+            exit 1
+          fi
+
+          # Parse dan tampilkan summary
+          INSERTED=$(echo "$HTTP_BODY" | grep -o '"inserted":[0-9]*' | grep -o '[0-9]*')
+          echo "✅ Guest pool refreshed. Inserted: $INSERTED items"
+
+  # ── 2. Process recommendation jobs ────────────────────────────────────────
+  process-reco-jobs:
+    name: Process Recommendation Jobs
+    runs-on: ubuntu-latest
+
+    # Jalankan jika:
+    #   - Semua schedule (00:00 & 12:00)
+    #   - Manual trigger dengan worker = 'all' atau 'process-reco-jobs'
+    if: |
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' && (
+        github.event.inputs.worker == 'all' ||
+        github.event.inputs.worker == 'process-reco-jobs'
+      ))
+
+    steps:
+      - name: Invoke process-reco-jobs
+        run: |
+          echo "Calling process-reco-jobs..."
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            -X POST \
+            "${{ env.SUPABASE_URL }}/functions/v1/process-reco-jobs" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "Content-Type: application/json")
+
+          HTTP_BODY=$(echo "$RESPONSE" | head -n -1)
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n 1)
+
+          echo "Status: $HTTP_CODE"
+          echo "Response: $HTTP_BODY"
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "Worker failed with status $HTTP_CODE"
+            exit 1
+          fi
+
+          DONE=$(echo "$HTTP_BODY" | grep -o '"done":[0-9]*' | grep -o '[0-9]*')
+          FAILED=$(echo "$HTTP_BODY" | grep -o '"failed":[0-9]*' | grep -o '[0-9]*' | head -1)
+          echo "✅ Jobs processed. Done: $DONE, Failed: $FAILED"
+
+  # ── 3. Generate user pool (manual only) ───────────────────────────────────
+  generate-user-pool:
+    name: Generate User Pool (Manual)
+    runs-on: ubuntu-latest
+
+    # Hanya dari manual trigger dengan worker = 'generate-user-pool'
+    if: |
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.worker == 'generate-user-pool' &&
+      github.event.inputs.userId != ''
+
+    steps:
+      - name: Invoke generate-user-pool
+        run: |
+          USER_ID="${{ github.event.inputs.userId }}"
+          echo "Calling generate-user-pool for user: $USER_ID"
+
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            -X POST \
+            "${{ env.SUPABASE_URL }}/functions/v1/generate-user-pool" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"userId\": \"$USER_ID\"}")
+
+          HTTP_BODY=$(echo "$RESPONSE" | head -n -1)
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n 1)
+
+          echo "Status: $HTTP_CODE"
+          echo "Response: $HTTP_BODY"
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "Worker failed with status $HTTP_CODE"
+            exit 1
+          fi
+
+          INSERTED=$(echo "$HTTP_BODY" | grep -o '"inserted":[0-9]*' | grep -o '[0-9]*')
+          echo "✅ User pool generated. Inserted: $INSERTED items"

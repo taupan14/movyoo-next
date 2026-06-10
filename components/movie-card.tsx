@@ -3,19 +3,26 @@
 import Link from "next/link";
 import { getPosterUrl, getBackdropUrl } from "@/lib/tmdb";
 import { cn } from "@/lib/utils";
-import { Star, TriangleAlert as AlertTriangle } from "lucide-react";
+import {
+  ChevronRight,
+  Star,
+  TriangleAlert as AlertTriangle,
+} from "lucide-react";
+import type { Movie } from "@/types/home";
+import { startLoader } from "@/components/page-loader";
 
-interface Movie {
-  id: number;
-  title: string;
-  poster_path: string | null;
-  backdrop_path: string | null;
-  vote_average: number;
-  release_date?: string;
-  genre_ids?: number[];
-  popularity?: number;
-  overview?: string;
-}
+// interface Movie {
+//   id: number;
+//   title: string;
+//   tmdb_id: number;
+//   poster_path: string | null;
+//   backdrop_path: string | null;
+//   vote_average: number;
+//   release_date?: string;
+//   genre_ids?: number[];
+//   popularity?: number;
+//   overview?: string;
+// }
 
 interface MovieCardProps {
   movie: Movie;
@@ -38,12 +45,13 @@ export function MovieCard({
     return (
       <Link
         href={`/movie/${movie.tmdb_id}`}
+        onClick={startLoader}
         className={cn("block group", className)}
       >
         <div className="relative rounded-xl overflow-hidden hover-lift card-shine">
           <div className="aspect-video relative">
             <img
-              src={getBackdropUrl(movie.backdrop_path)}
+              src={getBackdropUrl(movie.backdrop_path ?? movie.poster_path)}
               alt={movie.title}
               className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
             />
@@ -82,6 +90,7 @@ export function MovieCard({
     return (
       <Link
         href={`/movie/${movie.tmdb_id}`}
+        onClick={startLoader}
         className={cn("flex gap-3 group", className)}
       >
         <div className="w-16 h-24 rounded-lg overflow-hidden flex-shrink-0">
@@ -121,6 +130,7 @@ export function MovieCard({
   return (
     <Link
       href={`/movie/${movie.tmdb_id}`}
+      onClick={startLoader}
       className={cn("block group", className)}
     >
       <div className="relative rounded-xl overflow-hidden hover-lift card-shine">
@@ -132,9 +142,9 @@ export function MovieCard({
           />
           <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
           <div className="absolute bottom-0 left-0 right-0 p-3 opacity-0 group-hover:opacity-100 transition-opacity">
-            <h3 className="font-semibold text-white text-sm line-clamp-2">
+            {/* <h3 className="font-semibold text-white text-sm line-clamp-2">
               {movie.title}
-            </h3>
+            </h3> */}
           </div>
         </div>
         {showRating && movie.vote_average > 0 && (
@@ -169,6 +179,8 @@ export function MovieCard({
 interface MovieRowProps {
   title: string;
   movies: Movie[];
+  path?: string;
+  pathTitle?: string;
   variant?: "poster" | "backdrop";
   showLeaving?: boolean;
   leavingData?: Record<number, number>;
@@ -177,6 +189,8 @@ interface MovieRowProps {
 export function MovieRow({
   title,
   movies,
+  path = "/explore",
+  pathTitle,
   variant = "poster",
   showLeaving = false,
   leavingData,
@@ -185,13 +199,21 @@ export function MovieRow({
 
   return (
     <section className="mb-8">
-      <h2 className="text-lg font-bold text-foreground mb-3 px-4 lg:px-6">
-        {title}
-      </h2>
+      <div className="flex items-center justify-between mb-3 px-4 lg:px-8">
+        <h2 className="text-lg font-bold text-foreground">{title}</h2>
+
+        {pathTitle && (
+          <Link
+            href={path}
+            className="flex items-center gap-1 text-sm text-primary hover:text-primary/80 transition-colors"
+          >
+            {pathTitle}
+            <ChevronRight className="w-4 h-4" />
+          </Link>
+        )}
+      </div>
       <div className="flex gap-3 overflow-x-auto scrollbar-hide px-4 lg:px-6 pb-2">
         {movies.map((movie) => {
-          // console.log("movie id >> ", movie.tmdb_id);
-
           return (
             <div
               key={movie.id}
