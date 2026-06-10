@@ -1,0 +1,2 @@
+[functions.generate-user-pool]
+verify_jwt = false

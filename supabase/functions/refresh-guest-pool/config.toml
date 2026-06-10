@@ -1,0 +1,2 @@
+[functions.refresh-guest-pool]
+verify_jwt = false

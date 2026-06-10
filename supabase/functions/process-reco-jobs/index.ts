@@ -18,13 +18,7 @@
 //   - Timeout per job: 60 detik (Supabase edge function limit ~150s total)
 //   - Max jobs per run: 10 (hindari timeout)
 
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { generateUserPool } from "../generate-user-pool/index.ts";
-
-const supabase = createClient(
-  Deno.env.get("SUPABASE_URL")!,
-  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-);
+import { generateUserPool, supabase } from "../_shared/generator.ts";
 
 const MAX_JOBS_PER_RUN = 10;
 
@@ -36,10 +30,11 @@ interface RecoJob {
 }
 
 Deno.serve(async (req) => {
-  // ── Auth ──────────────────────────────────────────────────────────────────
-  const authHeader = req.headers.get("Authorization");
-  if (authHeader !== `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`) {
-    return new Response("Unauthorized", { status: 401 });
+  if (req.method !== "POST") {
+    return new Response(JSON.stringify({ error: "Method not allowed" }), {
+      status: 405,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
   console.log("[process-reco-jobs] Starting...");

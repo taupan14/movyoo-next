@@ -219,10 +219,11 @@ async function buildTvRows(
 // ─── Main handler ─────────────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
-  // Validasi secret agar tidak bisa dipanggil sembarangan
-  const authHeader = req.headers.get("Authorization");
-  if (authHeader !== `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`) {
-    return new Response("Unauthorized", { status: 401 });
+  if (req.method !== "POST") {
+    return new Response(JSON.stringify({ error: "Method not allowed" }), {
+      status: 405,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
   console.log("[refresh-guest-pool] Starting...");

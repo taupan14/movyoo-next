@@ -121,9 +121,18 @@ jobs:
             exit 1
           fi
 
-          DONE=$(echo "$HTTP_BODY" | grep -o '"done":[0-9]*' | grep -o '[0-9]*')
-          FAILED=$(echo "$HTTP_BODY" | grep -o '"failed":[0-9]*' | grep -o '[0-9]*' | head -1)
-          echo "✅ Jobs processed. Done: $DONE, Failed: $FAILED"
+          # processed:0 adalah kondisi normal (tidak ada pending jobs)
+          PROCESSED=$(echo "$HTTP_BODY" | grep -o '"processed":[0-9]*' | grep -o '[0-9]*' || echo "0")
+          DONE=$(echo "$HTTP_BODY"      | grep -o '"done":[0-9]*'      | grep -o '[0-9]*' || echo "0")
+          FAILED=$(echo "$HTTP_BODY"    | grep -o '"failed":[0-9]*'    | grep -o '[0-9]*' | head -1 || echo "0")
+
+          echo "✅ Jobs processed: $PROCESSED (done: $DONE, failed: $FAILED)"
+
+          # Hanya fail jika ada job yang failed (bukan jika tidak ada job sama sekali)
+          if [ "${FAILED:-0}" -gt "0" ]; then
+            echo "⚠️ $FAILED job(s) failed during processing"
+            exit 1
+          fi
 
   # ── 3. Generate user pool (manual only) ───────────────────────────────────
   generate-user-pool:
