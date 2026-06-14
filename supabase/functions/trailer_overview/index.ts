@@ -26,6 +26,17 @@ interface MovieRow {
   overview_en: string | null;
 }
 
+interface TvSeriesRow {
+  id: number;
+  tmdb_id: number;
+  name: string;
+  original_name: string | null;
+  first_air_date: string | null;
+  trailer_key: string | null;
+  overview: string | null;
+  overview_en: string | null;
+}
+
 interface UpdatePayload {
   trailer_key?: string;
   overview?: string;
@@ -33,30 +44,65 @@ interface UpdatePayload {
   synced_at: string;
 }
 
+interface NormalizedRow {
+  id: number;
+  tmdb_id: number;
+  title: string;
+  release_date: string | null;
+  trailer_key: string | null;
+  overview: string | null;
+  overview_en: string | null;
+}
+
+interface ProcessResult {
+  id: number;
+  title: string;
+  updated: Partial<UpdatePayload>;
+  skipped: boolean;
+  error?: string;
+}
+
+type MediaType = "movie" | "tv";
+
+// ─── Normalizers ─────────────────────────────────────────────────────────────
+
+function normalizeMovie(m: MovieRow): NormalizedRow {
+  return {
+    id: m.id,
+    tmdb_id: m.tmdb_id,
+    title: m.title,
+    release_date: m.release_date,
+    trailer_key: m.trailer_key,
+    overview: m.overview,
+    overview_en: m.overview_en,
+  };
+}
+
+function normalizeTv(t: TvSeriesRow): NormalizedRow {
+  return {
+    id: t.id,
+    tmdb_id: t.tmdb_id,
+    title: t.name,
+    release_date: t.first_air_date,
+    trailer_key: t.trailer_key,
+    overview: t.overview,
+    overview_en: t.overview_en,
+  };
+}
+
 // ─── Query Cleaner ────────────────────────────────────────────────────────────
-// Bersihkan title yang datang dari scraper bioskop sebelum dijadikan search query.
-// Contoh kotor: "TUMBAL PROYEK HORROR 1h 46m 2026 |D17 | IDN | 2026"
-// Hasil bersih: "TUMBAL PROYEK HORROR"
 
 function cleanTitle(raw: string): string {
-  return (
-    raw
-      // Hapus pola durasi: "1h 46m", "2h", "90m", dll
-      .replace(/\b\d{1,2}h(\s*\d{1,2}m)?\b/gi, "")
-      .replace(/\b\d{2,3}m\b/gi, "")
-      // Hapus rating konten: "D17", "R13", "SU", "13+", "17+", dll
-      .replace(/\b(D17|R13|SU|A|R|[A-Z]?\d{1,2}\+?)\b/g, "")
-      // Hapus kode negara/bahasa: "| IDN |", "| EN |", dll
-      .replace(/\|\s*[A-Z]{2,4}\s*/g, "")
-      // Hapus pipe yang tersisa
-      .replace(/\|/g, "")
-      // Hapus tahun 4 digit
-      .replace(/\b(19|20)\d{2}\b/g, "")
-      // Hapus tanda baca berlebih & spasi ganda
-      .replace(/[^\w\s]/g, " ")
-      .replace(/\s{2,}/g, " ")
-      .trim()
-  );
+  return raw
+    .replace(/\b\d{1,2}h(\s*\d{1,2}m)?\b/gi, "")
+    .replace(/\b\d{2,3}m\b/gi, "")
+    .replace(/\b(D17|R13|SU|A|R|[A-Z]?\d{1,2}\+?)\b/g, "")
+    .replace(/\|\s*[A-Z]{2,4}\s*/g, "")
+    .replace(/\|/g, "")
+    .replace(/\b(19|20)\d{2}\b/g, "")
+    .replace(/[^\w\s]/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 }
 
 // ─── TMDB Helpers ────────────────────────────────────────────────────────────
@@ -70,11 +116,15 @@ async function tmdbFetch(path: string, params: Record<string, string> = {}) {
   return res.json();
 }
 
-async function fetchTrailerFromTMDB(tmdbId: number): Promise<string | null> {
+async function fetchTrailerFromTMDB(
+  tmdbId: number,
+  mediaType: MediaType,
+): Promise<string | null> {
   try {
-    const data = await tmdbFetch(`/movie/${tmdbId}/videos`, {
-      language: "en-US",
-    });
+    const path =
+      mediaType === "tv" ? `/tv/${tmdbId}/videos` : `/movie/${tmdbId}/videos`;
+
+    const data = await tmdbFetch(path, { language: "en-US" });
     const videos: Array<{ type: string; site: string; key: string }> =
       data.results ?? [];
 
@@ -88,17 +138,27 @@ async function fetchTrailerFromTMDB(tmdbId: number): Promise<string | null> {
 
     return found?.key ?? null;
   } catch (err) {
-    console.warn(`[trailer] TMDB fetch failed for tmdb_id=${tmdbId}:`, err);
+    console.warn(
+      `[trailer] TMDB fetch failed for ${mediaType} tmdb_id=${tmdbId}:`,
+      err,
+    );
     return null;
   }
 }
 
-async function fetchOverviewEnFromTMDB(tmdbId: number): Promise<string | null> {
+async function fetchOverviewEnFromTMDB(
+  tmdbId: number,
+  mediaType: MediaType,
+): Promise<string | null> {
   try {
-    const data = await tmdbFetch(`/movie/${tmdbId}`, { language: "en-US" });
+    const path = mediaType === "tv" ? `/tv/${tmdbId}` : `/movie/${tmdbId}`;
+    const data = await tmdbFetch(path, { language: "en-US" });
     return data.overview || null;
   } catch (err) {
-    console.warn(`[overview_en] TMDB fetch failed for tmdb_id=${tmdbId}:`, err);
+    console.warn(
+      `[overview_en] TMDB fetch failed for ${mediaType} tmdb_id=${tmdbId}:`,
+      err,
+    );
     return null;
   }
 }
@@ -108,21 +168,25 @@ async function fetchOverviewEnFromTMDB(tmdbId: number): Promise<string | null> {
 async function fetchTrailerFromYouTube(
   title: string,
   releaseDate: string | null,
+  mediaType: MediaType,
 ): Promise<string | null> {
   try {
-    // Bersihkan title kotor dari scraper sebelum dijadikan query
     const cleanedTitle = cleanTitle(title);
     const year = releaseDate?.substring(0, 4) ?? "";
-    const query = `${cleanedTitle}${year ? ` ${year}` : ""} official trailer`;
+    const suffix =
+      mediaType === "tv" ? "official trailer season 1" : "official trailer";
+    const query = `${cleanedTitle}${year ? ` ${year}` : ""} ${suffix}`;
 
-    console.log(`[youtube] Searching: "${query}" (original title: "${title}")`);
+    console.log(
+      `[youtube] Searching (${mediaType}): "${query}" (original: "${title}")`,
+    );
 
     const url = new URL(YOUTUBE_SEARCH_URL);
     url.searchParams.set("key", YOUTUBE_API_KEY);
     url.searchParams.set("q", query);
     url.searchParams.set("part", "snippet");
     url.searchParams.set("type", "video");
-    url.searchParams.set("videoCategoryId", "1"); // Film & Animation
+    url.searchParams.set("videoCategoryId", "1");
     url.searchParams.set("maxResults", "1");
     url.searchParams.set("order", "relevance");
 
@@ -176,10 +240,7 @@ async function translateWithGroq(
               `Translate the given text to ${targetLang}. ` +
               `Output ONLY the translated text, no explanations, no notes, no quotes.`,
           },
-          {
-            role: "user",
-            content: text,
-          },
+          { role: "user", content: text },
         ],
       }),
     });
@@ -198,43 +259,33 @@ async function translateWithGroq(
   }
 }
 
-// ─── Process single movie ─────────────────────────────────────────────────────
+// ─── Process single item ──────────────────────────────────────────────────────
 
-async function processMovie(movie: MovieRow): Promise<{
-  id: number;
-  title: string;
-  updated: Partial<UpdatePayload>;
-  skipped: boolean;
-}> {
+async function processItem(
+  row: NormalizedRow,
+  mediaType: MediaType,
+): Promise<ProcessResult> {
   const updates: UpdatePayload = { synced_at: new Date().toISOString() };
   const updatedFields: string[] = [];
-
-  // tmdb_id negatif = data dari source lain (bukan TMDB), skip semua TMDB call
-  const isTmdbValid = movie.tmdb_id > 0;
+  const isTmdbValid = row.tmdb_id > 0;
+  const table = mediaType === "tv" ? "tv_series" : "movies";
 
   // ── trailer_key ────────────────────────────────────────────────────────────
-  if (!movie.trailer_key) {
+  if (!row.trailer_key) {
     let trailerKey: string | null = null;
 
     if (isTmdbValid) {
-      // Step 1: Coba TMDB dulu (gratis, tidak pakai quota YouTube)
-      trailerKey = await fetchTrailerFromTMDB(movie.tmdb_id);
+      trailerKey = await fetchTrailerFromTMDB(row.tmdb_id, mediaType);
     }
 
-    // Step 2: Fallback ke YouTube Data API jika TMDB kosong atau tmdb_id negatif
     if (!trailerKey) {
-      if (isTmdbValid) {
-        console.log(
-          `[trailer] TMDB empty, fallback to YouTube API for "${movie.title}"`,
-        );
-      } else {
-        console.log(
-          `[trailer] tmdb_id negatif, langsung YouTube API for "${movie.title}"`,
-        );
-      }
+      console.log(
+        `[trailer] ${isTmdbValid ? "TMDB empty," : "tmdb_id invalid,"} fallback YouTube for "${row.title}"`,
+      );
       trailerKey = await fetchTrailerFromYouTube(
-        movie.title,
-        movie.release_date,
+        row.title,
+        row.release_date,
+        mediaType,
       );
     }
 
@@ -244,33 +295,30 @@ async function processMovie(movie: MovieRow): Promise<{
     }
   }
 
-  // ── overview_en and overview ───────────────────────────────────────────────
-  let resolvedOverviewEn = movie.overview_en;
-  let resolvedOverview = movie.overview;
+  // ── overview_en & overview ─────────────────────────────────────────────────
+  let resolvedOverviewEn = row.overview_en;
+  let resolvedOverview = row.overview;
 
-  // Case: both empty → fetch English dari TMDB (hanya jika tmdb_id valid)
   if (!resolvedOverviewEn && !resolvedOverview) {
     if (isTmdbValid) {
-      console.log(
-        `[overview] Both empty for "${movie.title}", fetching from TMDB...`,
+      console.log(`[overview] Both empty for "${row.title}", fetching TMDB...`);
+      resolvedOverviewEn = await fetchOverviewEnFromTMDB(
+        row.tmdb_id,
+        mediaType,
       );
-      resolvedOverviewEn = await fetchOverviewEnFromTMDB(movie.tmdb_id);
       if (resolvedOverviewEn) {
         updates.overview_en = resolvedOverviewEn;
         updatedFields.push("overview_en");
       }
     } else {
       console.warn(
-        `[overview] Both empty & tmdb_id negatif, skip "${movie.title}"`,
+        `[overview] Both empty & tmdb_id invalid, skip "${row.title}"`,
       );
     }
   }
 
-  // Case: overview_en empty → translate dari overview (ID → EN)
   if (!resolvedOverviewEn && resolvedOverview) {
-    console.log(
-      `[overview] Translating overview → overview_en for "${movie.title}"`,
-    );
+    console.log(`[overview] Translating ID→EN for "${row.title}"`);
     const translated = await translateWithGroq(resolvedOverview, "English");
     if (translated) {
       resolvedOverviewEn = translated;
@@ -279,11 +327,8 @@ async function processMovie(movie: MovieRow): Promise<{
     }
   }
 
-  // Case: overview empty → translate dari overview_en (EN → ID)
   if (!resolvedOverview && resolvedOverviewEn) {
-    console.log(
-      `[overview] Translating overview_en → overview for "${movie.title}"`,
-    );
+    console.log(`[overview] Translating EN→ID for "${row.title}"`);
     const translated = await translateWithGroq(
       resolvedOverviewEn,
       "Indonesian",
@@ -294,20 +339,94 @@ async function processMovie(movie: MovieRow): Promise<{
     }
   }
 
-  // Skip DB update jika tidak ada yang berubah
   if (updatedFields.length === 0) {
-    return { id: movie.id, title: movie.title, updated: {}, skipped: true };
+    return { id: row.id, title: row.title, updated: {}, skipped: true };
   }
 
-  const { error } = await supabase
-    .from("movies")
-    .update(updates)
-    .eq("id", movie.id);
+  const { error } = await supabase.from(table).update(updates).eq("id", row.id);
 
-  if (error) throw new Error(`update movie id=${movie.id}: ${error.message}`);
+  if (error) {
+    throw new Error(`update ${table} id=${row.id}: ${error.message}`);
+  }
 
-  console.log(`[done] "${movie.title}" → updated: ${updatedFields.join(", ")}`);
-  return { id: movie.id, title: movie.title, updated: updates, skipped: false };
+  console.log(
+    `[done] [${mediaType}] "${row.title}" → updated: ${updatedFields.join(", ")}`,
+  );
+  return { id: row.id, title: row.title, updated: updates, skipped: false };
+}
+
+// ─── Run with pagination ──────────────────────────────────────────────────────
+
+async function runWithPagination(
+  mediaType: MediaType,
+  limit: number,
+): Promise<ProcessResult[]> {
+  const table = mediaType === "tv" ? "tv_series" : "movies";
+  const selectFields =
+    mediaType === "tv"
+      ? "id, tmdb_id, name, original_name, first_air_date, trailer_key, overview, overview_en"
+      : "id, tmdb_id, title, original_title, release_date, trailer_key, overview, overview_en";
+  const orderField = mediaType === "tv" ? "first_air_date" : "release_date";
+  const batchSize = 50;
+
+  let processed = 0;
+  let offset = 0;
+  const results: ProcessResult[] = [];
+
+  while (processed < limit) {
+    const toFetch = Math.min(batchSize, limit - processed + offset);
+    // Fetch lebih banyak untuk antisipasi item yang akan di-skip
+    const fetchCount = Math.min(batchSize, limit * 2);
+
+    const { data, error } = await supabase
+      .from(table)
+      .select(selectFields)
+      .or("trailer_key.is.null,overview.is.null,overview_en.is.null")
+      .order(orderField, { ascending: false })
+      .range(offset, offset + fetchCount - 1);
+
+    if (error) throw new Error(`fetch ${table}: ${error.message}`);
+    if (!data?.length) {
+      console.log(`[${mediaType}] No more data at offset=${offset}, stopping.`);
+      break;
+    }
+
+    console.log(
+      `[${mediaType}] Batch offset=${offset}, fetched=${data.length}, processed=${processed}/${limit}`,
+    );
+
+    for (const row of data) {
+      if (processed >= limit) break;
+
+      const normalized =
+        mediaType === "tv"
+          ? normalizeTv(row as TvSeriesRow)
+          : normalizeMovie(row as MovieRow);
+
+      try {
+        const result = await processItem(normalized, mediaType);
+        results.push(result);
+        if (!result.skipped) processed++;
+      } catch (err) {
+        console.error(`[${mediaType}] Failed for "${normalized.title}":`, err);
+        results.push({
+          id: normalized.id,
+          title: normalized.title,
+          updated: {},
+          skipped: false,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        processed++; // failed tetap dihitung agar tidak loop selamanya
+      }
+    }
+
+    offset += fetchCount;
+  }
+
+  console.log(
+    `[${mediaType}] Done. processed=${processed}, total results=${results.length}`,
+  );
+  return results;
 }
 
 // ─── Edge Function Handler ────────────────────────────────────────────────────
@@ -320,74 +439,62 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  // Optional: override limit via body { "limit": 10 }
   let limit = 100;
+  let media: "movie" | "tv" | "all" = "all";
+
   if (req.method === "POST") {
     try {
       const body = await req.json().catch(() => ({}));
       if (body?.limit && Number(body.limit) > 0) limit = Number(body.limit);
+      if (body?.media === "movie" || body?.media === "tv") media = body.media;
     } catch {
-      // ignore, use default
+      // ignore, use defaults
     }
   }
 
   try {
-    // Fetch movies dengan minimal 1 field kosong, order release_date desc
-    const { data: movies, error: fetchError } = await supabase
-      .from("movies")
-      .select(
-        "id, tmdb_id, title, original_title, release_date, trailer_key, overview, overview_en",
-      )
-      .or("trailer_key.is.null,overview.is.null,overview_en.is.null")
-      .order("release_date", { ascending: false })
-      .limit(limit);
+    const movieResults =
+      media === "tv" ? [] : await runWithPagination("movie", limit);
 
-    if (fetchError) throw new Error(`fetch movies: ${fetchError.message}`);
-    if (!movies?.length) {
+    const tvResults =
+      media === "movie" ? [] : await runWithPagination("tv", limit);
+
+    const allResults = [...movieResults, ...tvResults];
+
+    if (allResults.length === 0) {
       return new Response(
         JSON.stringify({
           success: true,
-          message: "No movies need updating",
+          message: "No items need updating",
           processed: 0,
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       );
     }
 
-    console.log(`[enrich-movies] Processing ${movies.length} movies...`);
-
-    // Proses sequential untuk hindari rate limit GROQ & YouTube quota
-    const results = [];
-    for (const movie of movies as MovieRow[]) {
-      try {
-        const result = await processMovie(movie);
-        results.push(result);
-      } catch (err) {
-        console.error(`[enrich-movies] Failed for "${movie.title}":`, err);
-        results.push({
-          id: movie.id,
-          title: movie.title,
-          error: err instanceof Error ? err.message : String(err),
-          skipped: false,
-        });
-      }
-    }
-
-    const updated = results.filter((r) => !r.skipped && !("error" in r)).length;
-    const skipped = results.filter((r) => r.skipped).length;
-    const failed = results.filter((r) => "error" in r).length;
+    const summarize = (results: ProcessResult[]) => ({
+      updated: results.filter((r) => !r.skipped && !r.error).length,
+      skipped: results.filter((r) => r.skipped).length,
+      failed: results.filter((r) => !!r.error).length,
+    });
 
     return new Response(
       JSON.stringify({
         success: true,
-        message: `Processed ${movies.length} movies`,
-        summary: { updated, skipped, failed },
-        results,
+        message: `Processed ${allResults.length} item(s) [media=${media}]`,
+        summary: {
+          movie: summarize(movieResults),
+          tv: summarize(tvResults),
+        },
+        results: {
+          movie: movieResults,
+          tv: tvResults,
+        },
       }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
   } catch (err) {
-    console.error("[enrich-movies] Fatal error:", err);
+    console.error("[enrich] Fatal error:", err);
     return new Response(
       JSON.stringify({
         success: false,

@@ -21,7 +21,9 @@ export async function buildMetadata(
     vote_average: number;
     release_date?: string | null;
     first_air_date?: string | null;
+    tmdb_id: number | null;
     overview: string;
+    overview_en: string;
   },
 ): Promise<PoolMetadata> {
   const releaseYear =
@@ -90,7 +92,9 @@ export async function buildMetadata(
     backdrop_path: baseRow.backdrop_path,
     vote_average: Number(baseRow.vote_average),
     release_year: releaseYear,
+    tmdb_id: baseRow.tmdb_id,
     overview: baseRow.overview ?? "",
+    overview_en: baseRow.overview_en ?? "",
     genres,
     cast,
   };

@@ -1,10 +1,12 @@
 # .github/workflows/swipe-workers.yml
 #
-# GitHub Actions untuk menjalankan 3 Supabase Edge Function worker secara terjadwal.
+# GitHub Actions untuk menjalankan Supabase Edge Function workers secara terjadwal.
 #
 # Schedule:
-#   refresh-guest-pool   → setiap hari    pukul 00:00 UTC
-#   process-reco-jobs    → setiap 12 jam  (00:00 & 12:00 UTC)
+#   refresh-guest-pool        → setiap hari    pukul 00:00 UTC
+#   process-reco-jobs         → setiap 12 jam  (00:00 & 12:00 UTC)
+#   reset-daily-challenges    → setiap hari    pukul 17:00 UTC (00:00 WIB)
+#   reset-weekly-challenges   → setiap Senin   pukul 17:00 UTC (00:00 WIB)
 #
 # Manual trigger tersedia untuk semua worker via workflow_dispatch.
 #
@@ -19,6 +21,9 @@ on:
     - cron: "0 0 * * *"
     # Reco jobs processor — setiap 12 jam
     - cron: "0 0,12 * * *"
+    # Daily + weekly challenge cleanup — setiap hari 17:00 UTC (00:00 WIB)
+    # Weekly hanya akan dieksekusi jika hari Senin (dicek di dalam job)
+    - cron: "0 17 * * *"
 
   # Trigger manual dari GitHub Actions UI
   workflow_dispatch:
@@ -32,6 +37,8 @@ on:
           - refresh-guest-pool
           - process-reco-jobs
           - generate-user-pool
+          - reset-daily-challenges
+          - reset-weekly-challenges
       userId:
         description: "User ID (hanya untuk generate-user-pool)"
         required: false
@@ -48,9 +55,6 @@ jobs:
     name: Refresh Guest Pool
     runs-on: ubuntu-latest
 
-    # Jalankan jika:
-    #   - Schedule jam 00:00 (cron pertama)
-    #   - Manual trigger dengan worker = 'all' atau 'refresh-guest-pool'
     if: |
       (github.event_name == 'schedule' && (
         startsWith(github.event.schedule, '0 0 *')
@@ -81,7 +85,6 @@ jobs:
             exit 1
           fi
 
-          # Parse dan tampilkan summary
           INSERTED=$(echo "$HTTP_BODY" | grep -o '"inserted":[0-9]*' | grep -o '[0-9]*')
           echo "✅ Guest pool refreshed. Inserted: $INSERTED items"
 
@@ -90,9 +93,6 @@ jobs:
     name: Process Recommendation Jobs
     runs-on: ubuntu-latest
 
-    # Jalankan jika:
-    #   - Semua schedule (00:00 & 12:00)
-    #   - Manual trigger dengan worker = 'all' atau 'process-reco-jobs'
     if: |
       github.event_name == 'schedule' ||
       (github.event_name == 'workflow_dispatch' && (
@@ -121,14 +121,12 @@ jobs:
             exit 1
           fi
 
-          # processed:0 adalah kondisi normal (tidak ada pending jobs)
           PROCESSED=$(echo "$HTTP_BODY" | grep -o '"processed":[0-9]*' | grep -o '[0-9]*' || echo "0")
           DONE=$(echo "$HTTP_BODY"      | grep -o '"done":[0-9]*'      | grep -o '[0-9]*' || echo "0")
           FAILED=$(echo "$HTTP_BODY"    | grep -o '"failed":[0-9]*'    | grep -o '[0-9]*' | head -1 || echo "0")
 
           echo "✅ Jobs processed: $PROCESSED (done: $DONE, failed: $FAILED)"
 
-          # Hanya fail jika ada job yang failed (bukan jika tidak ada job sama sekali)
           if [ "${FAILED:-0}" -gt "0" ]; then
             echo "⚠️ $FAILED job(s) failed during processing"
             exit 1
@@ -139,7 +137,6 @@ jobs:
     name: Generate User Pool (Manual)
     runs-on: ubuntu-latest
 
-    # Hanya dari manual trigger dengan worker = 'generate-user-pool'
     if: |
       github.event_name == 'workflow_dispatch' &&
       github.event.inputs.worker == 'generate-user-pool' &&
@@ -171,3 +168,102 @@ jobs:
 
           INSERTED=$(echo "$HTTP_BODY" | grep -o '"inserted":[0-9]*' | grep -o '[0-9]*')
           echo "✅ User pool generated. Inserted: $INSERTED items"
+
+  # ── 4. Reset daily challenges cleanup ─────────────────────────────────────
+  reset-daily-challenges:
+    name: Reset Daily Challenges Cleanup
+    runs-on: ubuntu-latest
+
+    # Jalan setiap hari jam 17:00 UTC (schedule '0 17 * * *')
+    if: |
+      (github.event_name == 'schedule' && (
+        github.event.schedule == '0 17 * * *'
+      )) ||
+      (github.event_name == 'workflow_dispatch' && (
+        github.event.inputs.worker == 'all' ||
+        github.event.inputs.worker == 'reset-daily-challenges'
+      ))
+
+    steps:
+      - name: Invoke reset-daily-challenges
+        run: |
+          echo "Calling reset-daily-challenges..."
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            -X POST \
+            "${{ env.SUPABASE_URL }}/functions/v1/reset-daily-challenges" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "Content-Type: application/json")
+
+          HTTP_BODY=$(echo "$RESPONSE" | head -n -1)
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n 1)
+
+          echo "Status: $HTTP_CODE"
+          echo "Response: $HTTP_BODY"
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "Worker failed with status $HTTP_CODE"
+            exit 1
+          fi
+
+          DELETED=$(echo "$HTTP_BODY" | grep -o '"deleted":[0-9]*' | grep -o '[0-9]*' || echo "0")
+          echo "✅ Daily challenges cleanup done. Deleted: $DELETED old rows"
+
+  # ── 5. Reset weekly challenges cleanup ────────────────────────────────────
+  reset-weekly-challenges:
+    name: Reset Weekly Challenges Cleanup
+    runs-on: ubuntu-latest
+
+    # Jalan setiap hari 17:00 UTC, tapi step di dalam cek hari Senin
+    # Menggunakan schedule yang sama ('0 17 * * *') — pengecekan hari di step
+    if: |
+      (github.event_name == 'schedule' && (
+        github.event.schedule == '0 17 * * *'
+      )) ||
+      (github.event_name == 'workflow_dispatch' && (
+        github.event.inputs.worker == 'all' ||
+        github.event.inputs.worker == 'reset-weekly-challenges'
+      ))
+
+    steps:
+      - name: Check if Monday (skip if not)
+        id: check_day
+        run: |
+          # Untuk schedule: hanya jalankan di hari Senin (day of week = 1)
+          # Untuk manual trigger: selalu lanjut
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            DAY=$(date +%u)  # 1=Senin, 7=Minggu
+            if [ "$DAY" != "1" ]; then
+              echo "Bukan hari Senin (hari ini: $DAY), skip."
+              echo "skip=true" >> $GITHUB_OUTPUT
+            else
+              echo "Hari Senin, lanjut cleanup."
+              echo "skip=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "Manual trigger, skip day check."
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Invoke reset-weekly-challenges
+        if: steps.check_day.outputs.skip != 'true'
+        run: |
+          echo "Calling reset-weekly-challenges..."
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            -X POST \
+            "${{ env.SUPABASE_URL }}/functions/v1/reset-weekly-challenges" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "Content-Type: application/json")
+
+          HTTP_BODY=$(echo "$RESPONSE" | head -n -1)
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n 1)
+
+          echo "Status: $HTTP_CODE"
+          echo "Response: $HTTP_BODY"
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "Worker failed with status $HTTP_CODE"
+            exit 1
+          fi
+
+          DELETED=$(echo "$HTTP_BODY" | grep -o '"deleted":[0-9]*' | grep -o '[0-9]*' || echo "0")
+          echo "✅ Weekly challenges cleanup done. Deleted: $DELETED old rows"

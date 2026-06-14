@@ -16,7 +16,7 @@ import {
   Brain,
   Swords,
   Flame,
-  BookmarkPlus,
+  Bookmark,
   BookmarkCheck,
   Loader2,
 } from "lucide-react";
@@ -160,6 +160,7 @@ export function HomeClient() {
   }, [heroMovies.length]);
 
   useEffect(() => {
+    // console.log("[HomeClient] Hero movies:", heroMovies);
     if (heroMovies.length > 1) startTimer();
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
@@ -279,7 +280,8 @@ export function HomeClient() {
     <div className="min-h-screen">
       {/* ── Hero Slider ───────────────────────────────────────────────────────── */}
       {heroMovie && (
-        <section className="relative h-[70vh] lg:h-[80vh] -mt-14 lg:mt-0 overflow-hidden">
+        <section className="relative -mt-14 lg:mt-0 overflow-hidden h-[56vw] min-h-[320px] max-h-[520px] lg:h-[72vh] lg:max-h-[680px]">
+          {/* Backdrop layers */}
           {heroMovies.map((movie, idx) => (
             <div
               key={movie.id}
@@ -289,61 +291,112 @@ export function HomeClient() {
               <img
                 src={getBackdropUrl(movie.backdrop_path ?? movie.poster_path)}
                 alt=""
-                className="w-full h-full object-cover"
+                className="w-full h-full object-cover object-center"
               />
             </div>
           ))}
 
-          <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent pointer-events-none" />
-          <div className="absolute inset-0 bg-gradient-to-r from-background/80 to-transparent pointer-events-none" />
+          {/* Dark base + editorial grid overlay */}
+          <div className="absolute inset-0 bg-[#0a0c14]/70 pointer-events-none" />
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{
+              backgroundImage:
+                "linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px)",
+              backgroundSize: "28px 28px",
+            }}
+          />
 
-          <div className="relative h-full flex items-end pb-12 lg:pb-16 px-4 lg:px-8">
+          {/* Gradient fades: bottom strong, right fade for poster bleed */}
+          <div className="absolute inset-0 bg-gradient-to-t from-background via-background/50 to-transparent pointer-events-none" />
+          <div className="absolute inset-0 bg-gradient-to-r from-background/90 via-background/40 to-transparent pointer-events-none lg:via-background/20" />
+
+          {/* Content */}
+          <div className="relative h-full flex items-end">
             <div
-              className={`max-w-2xl transition-all duration-500 ${
+              className={cn(
+                "w-full max-w-xl px-4 pb-10 lg:px-10 lg:pb-14 transition-all duration-500",
                 isTransitioning
-                  ? "opacity-0 translate-y-4"
-                  : "opacity-100 translate-y-0"
-              }`}
+                  ? "opacity-0 translate-y-3"
+                  : "opacity-100 translate-y-0",
+              )}
             >
-              <div className="flex items-center gap-2 mb-3">
+              {/* Counter + trending badge */}
+              <div className="flex items-center gap-3 mb-3">
                 <span className="flex items-center gap-1 px-2 py-1 rounded-md bg-primary/20 text-primary text-xs font-medium">
                   <TrendingUp className="w-3 h-3" />#{heroIndex + 1}{" "}
                   {t("trending")}
                 </span>
+                <div className="flex-1 h-px bg-white/10" />
+                <span className="text-[11px] font-semibold tracking-widest text-white/30">
+                  {String(heroIndex + 1).padStart(2, "0")} /{" "}
+                  {String(heroMovies.length).padStart(2, "0")}
+                </span>
+                {/* <span className="text-[10px] font-semibold tracking-wider text-yellow-300 bg-yellow-300/10 border border-yellow-300/25 px-2 py-0.5 rounded">
+                  TRENDING
+                </span> */}
+              </div>
+
+              {/* Title */}
+              <h1 className="text-2xl lg:text-4xl font-bold text-white leading-tight mb-2">
+                {heroMovie.title}
+              </h1>
+
+              {/* Pills: genre, duration, rating */}
+              <div className="flex flex-wrap items-center gap-1.5 mb-3">
                 {heroMovie.vote_average > 0 && (
-                  <span className="flex items-center gap-1 px-2 py-1 rounded-md bg-yellow-500/20 text-yellow-400 text-xs font-medium">
-                    <Star className="w-3 h-3 fill-yellow-400" />
+                  <span className="inline-flex items-center gap-1 text-[10px] px-2.5 py-1 rounded-full bg-white/[0.07] border border-white/10 text-white/50">
+                    <Star className="w-2.5 h-2.5 fill-yellow-400 text-yellow-400" />
                     {heroMovie.vote_average.toFixed(1)}
                   </span>
                 )}
+                {heroMovie.release_date && (
+                  <span className="text-[10px] px-2.5 py-1 rounded-full bg-white/[0.07] border border-white/10 text-white/50">
+                    {new Date(heroMovie.release_date).getFullYear()}
+                  </span>
+                )}
+                <div className="flex flex-wrap gap-2">
+                  {heroMovie.genres?.slice(0, 2).map((genre: string) => (
+                    <span
+                      key={genre}
+                      className="text-[10px] px-2.5 py-1 rounded-full bg-white/[0.07] border border-white/10 text-white/50"
+                    >
+                      {genre}
+                    </span>
+                  ))}
+                </div>
               </div>
-              <h1 className="text-3xl lg:text-5xl font-bold text-white mb-3 leading-tight">
-                {heroMovie.title}
-              </h1>
-              <p className="text-white/70 text-sm lg:text-base line-clamp-3 mb-6 max-w-lg">
+
+              {/* Synopsis */}
+              <p className="text-[11.5px] lg:text-sm text-white/45 leading-relaxed line-clamp-2 mb-5 max-w-md">
                 {getSynopsis(heroMovie) ||
                   (locale === "id"
                     ? "Klik untuk melihat detail film ini."
                     : "Click to see movie details.")}
               </p>
-              <div className="flex items-center gap-3">
+
+              {/* CTAs */}
+              <div className="flex items-center gap-2">
                 <Link
                   href={`/movie/${heroMovie.tmdb_id}`}
                   onClick={startLoader}
-                  className="flex items-center gap-2 px-6 py-3 rounded-xl gradient-primary text-white font-medium hover:opacity-90 transition-opacity"
+                  className="flex items-center gap-2 px-4 py-2 lg:px-5 lg:py-2.5 rounded-lg bg-white text-[#0a0c14] text-xs lg:text-sm font-semibold hover:bg-white/90 transition-opacity whitespace-nowrap"
                 >
-                  <Play className="w-4 h-4 fill-white" />
+                  <Play className="w-3.5 h-3.5 fill-[#0a0c14]" />
                   {t("where_to_watch")}
                 </Link>
                 <button
                   onClick={handleBookmark}
                   disabled={watchlistLoading}
+                  aria-label={
+                    heroInWatchlist && user ? t("bookmarked") : t("bookmark")
+                  }
                   className={cn(
-                    "flex items-center gap-2 px-6 py-3 rounded-xl font-medium transition-all",
-                    heroInWatchlist && user
-                      ? "border border-primary/40 text-primary hover:bg-primary/30"
-                      : "glass text-white hover:bg-white/10",
-                    watchlistLoading && "opacity-70 cursor-not-allowed",
+                    "w-9 h-9 lg:w-10 lg:h-10 flex items-center justify-center rounded-lg border border-white/15 bg-white/[0.07] text-white/70 transition-all hover:bg-white/10",
+                    heroInWatchlist &&
+                      user &&
+                      "border-primary/50 text-primary bg-primary/10",
+                    watchlistLoading && "opacity-60 cursor-not-allowed",
                   )}
                 >
                   {watchlistLoading ? (
@@ -351,11 +404,28 @@ export function HomeClient() {
                   ) : heroInWatchlist && user ? (
                     <BookmarkCheck className="w-4 h-4 fill-primary" />
                   ) : (
-                    <BookmarkPlus className="w-4 h-4" />
+                    <Bookmark className="w-4 h-4" />
                   )}
-                  {heroInWatchlist && user ? t("bookmarked") : t("bookmark")}
                 </button>
               </div>
+
+              {/* Dot indicators */}
+              {heroMovies.length > 1 && (
+                <div className="flex items-center gap-1.5 mt-4">
+                  {heroMovies.map((_, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => goToSlide(idx)}
+                      className={cn(
+                        "rounded-full transition-all duration-300",
+                        idx === heroIndex
+                          ? "w-5 h-1 bg-white"
+                          : "w-1 h-1 bg-white/25 hover:bg-white/40",
+                      )}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
@@ -367,22 +437,14 @@ export function HomeClient() {
             />
           )}
 
-          {/* Dot indicators */}
-          {heroMovies.length > 1 && (
-            <div className="absolute bottom-4 lg:bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2 z-10">
-              {heroMovies.map((_, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => goToSlide(idx)}
-                  className={`transition-all duration-300 rounded-full ${
-                    idx === heroIndex
-                      ? "w-8 h-2 bg-primary"
-                      : "w-2 h-2 bg-white/40 hover:bg-white/60"
-                  }`}
-                />
-              ))}
-            </div>
-          )}
+          {/* Progress bar */}
+          <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-primary/[0.08]">
+            <div
+              key={heroIndex}
+              className="h-full bg-primary/25 animate-[progress_6s_linear_forwards]"
+              style={{ width: "100%" }}
+            />
+          </div>
         </section>
       )}
 

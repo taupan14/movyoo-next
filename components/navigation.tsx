@@ -162,7 +162,7 @@ export function Navigation() {
                 className={cn(
                   "w-11 h-11 rounded-xl flex items-center justify-center transition-all duration-200 group relative",
                   isActive
-                    ? "bg-primary/20 text-primary"
+                    ? "bg-primary/10 text-primary"
                     : "text-muted-foreground hover:text-foreground hover:bg-white/5",
                 )}
               >

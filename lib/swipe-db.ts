@@ -9,9 +9,15 @@
  * Dipanggil oleh:
  *   - GET  /api/swipe-pick        → fetchSwipeFeed() / fetchGuestFeed()
  *   - POST /api/swipe-pick/swipe  → recordSwipe()
+ *
+ * PENTING: Fungsi yang menulis ke DB (recordSwipe, getPoolCount) menerima
+ * `client` (SupabaseClient dengan session user) dari route handler agar
+ * RLS berjalan dengan benar. Fungsi read-only (fetchGuestFeed) tetap pakai
+ * anon client karena tidak butuh auth context.
  */
 
 import { supabase } from "./supabase";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -26,12 +32,14 @@ export type SwipeBucket =
 
 /** Struktur JSONB kolom `metadata` yang diisi worker */
 export interface PoolMetadata {
+  tmdb_id: number | null; // untuk navigasi ke detail page
   title: string;
   poster_path: string | null;
   backdrop_path: string | null;
   vote_average: number;
   release_year: string | null;
-  overview: string;
+  overview: string | null; // overview bahasa Indonesia
+  overview_en: string | null; // overview bahasa Inggris
   genres: string[]; // maks 2
   cast: string[]; // maks 3
 }
@@ -45,12 +53,14 @@ export interface SwipeFeedItem {
   bucket: SwipeBucket;
   score: number;
   // — dari metadata —
+  tmdb_id: number | null; // untuk navigasi ke /movie/[tmdb_id] atau /tv/[tmdb_id]
   title: string;
   poster_path: string | null;
   backdrop_path: string | null;
   vote_average: number;
   release_year: string | null;
-  overview: string;
+  overview: string | null; // overview bahasa Indonesia (null jika belum tersedia)
+  overview_en: string | null; // overview bahasa Inggris
   genres: string[];
   cast: string[];
 }
@@ -60,6 +70,7 @@ export interface SwipeFeedItem {
 /** Mapping baris pool → SwipeFeedItem. Tidak ada join, metadata sudah inline. */
 function rowToFeedItem(row: any): SwipeFeedItem {
   const meta: PoolMetadata = row.metadata ?? {};
+  // console.log("rowToFeedItem()", meta);
   return {
     pool_id: Number(row.id),
     media_type: row.media_type as MediaType,
@@ -67,12 +78,15 @@ function rowToFeedItem(row: any): SwipeFeedItem {
     series_id: row.series_id ?? undefined,
     bucket: (row.bucket ?? "trending") as SwipeBucket,
     score: Number(row.score ?? 0),
+    // — dari metadata —
+    tmdb_id: meta.tmdb_id ?? null,
     title: meta.title ?? "",
     poster_path: meta.poster_path ?? null,
     backdrop_path: meta.backdrop_path ?? null,
     vote_average: meta.vote_average ?? 0,
     release_year: meta.release_year ?? null,
-    overview: meta.overview ?? "",
+    overview: meta.overview ?? null, // bahasa Indonesia
+    overview_en: meta.overview_en ?? null, // bahasa Inggris
     genres: meta.genres ?? [],
     cast: meta.cast ?? [],
   };
@@ -87,13 +101,14 @@ const POOL_COLS =
 
 /**
  * Ambil N item dari pool user yang belum served, urut score DESC.
- * Single query — tidak ada join.
+ * Menerima authenticated client agar RLS bisa memfilter by user.
  */
 export async function fetchSwipeFeed(
+  client: SupabaseClient,
   userId: string,
   limit = 10,
 ): Promise<SwipeFeedItem[]> {
-  const { data, error } = await supabase
+  const { data, error } = await client
     .from("user_recommendation_pool")
     .select(POOL_COLS)
     .eq("user_id", userId)
@@ -114,14 +129,9 @@ export async function fetchSwipeFeed(
 
 /**
  * Ambil N item dari shared guest pool.
- * Guest pool di-refresh harian oleh worker — berisi 50 item
- * (25 movie + 25 TV) dari berbagai bucket/kategori.
- *
- * `served` tidak di-track untuk guest karena tidak ada session —
- * kita gunakan offset random sederhana agar tiap sesi terasa segar.
+ * Pakai anon client — tidak butuh auth context.
  */
 export async function fetchGuestFeed(limit = 10): Promise<SwipeFeedItem[]> {
-  // Hitung total guest pool dulu untuk random offset
   const { count } = await supabase
     .from("user_recommendation_pool")
     .select("id", { count: "exact", head: true })
@@ -143,15 +153,17 @@ export async function fetchGuestFeed(limit = 10): Promise<SwipeFeedItem[]> {
     return [];
   }
 
-  // Shuffle agar urutan tidak selalu sama
   const items = (data ?? []).map(rowToFeedItem);
   return items.sort(() => Math.random() - 0.5);
 }
 
 // ─── 3. GET POOL COUNT ────────────────────────────────────────────────────────
 
-export async function getPoolCount(userId: string): Promise<number> {
-  const { count } = await supabase
+export async function getPoolCount(
+  client: SupabaseClient,
+  userId: string,
+): Promise<number> {
+  const { count } = await client
     .from("user_recommendation_pool")
     .select("id", { count: "exact", head: true })
     .eq("user_id", userId)
@@ -164,6 +176,7 @@ export async function getPoolCount(userId: string): Promise<number> {
 // ─── 4. RECORD SWIPE ──────────────────────────────────────────────────────────
 
 export interface RecordSwipeParams {
+  client: SupabaseClient; // authenticated server client dari route handler
   userId: string;
   mediaType: MediaType;
   movieId?: number;
@@ -180,8 +193,8 @@ export interface RecordSwipeResult {
 
 /**
  * Rekam swipe user:
- *   1. Upsert user_swipes
- *   2. Jika like → upsert user_liked
+ *   1. Insert user_swipes (update jika duplicate)
+ *   2. Jika like → insert user_liked (ignore jika duplicate)
  *   3. Mark pool row served = true
  *   4. Update user_preferences (genre + cast + language scores)
  *   5. Cek sisa pool → return poolLow flag
@@ -189,70 +202,100 @@ export interface RecordSwipeResult {
 export async function recordSwipe(
   params: RecordSwipeParams,
 ): Promise<RecordSwipeResult> {
-  const { userId, mediaType, movieId, seriesId, action, poolId } = params;
+  const { client, userId, mediaType, movieId, seriesId, action, poolId } =
+    params;
   const isLiked = action === "like";
 
-  // ── 4a. Upsert user_swipes ─────────────────────────────────────────────
-  const { error: swipeError } = await supabase.from("user_swipes").upsert(
-    {
+  // ── 4a. Insert user_swipes ────────────────────────────────────────────
+  // Supabase JS tidak support onConflict pada partial index (WHERE clause),
+  // pakai insert biasa. Jika duplicate (23505) → update action saja.
+  const swipeRow = {
+    user_id: userId,
+    media_type: mediaType,
+    movie_id: movieId ?? null,
+    series_id: seriesId ?? null,
+    action,
+    swiped_at: new Date().toISOString(),
+  };
+
+  const { error: swipeError } = await client
+    .from("user_swipes")
+    .insert(swipeRow);
+
+  if (swipeError) {
+    if (swipeError.code === "23505") {
+      // Duplicate — update action saja
+      const updateQuery = movieId
+        ? client
+            .from("user_swipes")
+            .update({ action, swiped_at: swipeRow.swiped_at })
+            .eq("user_id", userId)
+            .eq("movie_id", movieId)
+        : client
+            .from("user_swipes")
+            .update({ action, swiped_at: swipeRow.swiped_at })
+            .eq("user_id", userId)
+            .eq("series_id", seriesId!);
+
+      const { error: updateError } = await updateQuery;
+      if (updateError) {
+        console.error(
+          "[swipe-db] recordSwipe — user_swipes update:",
+          updateError.message,
+        );
+        return { success: false, isLiked, poolLow: false };
+      }
+    } else {
+      console.error(
+        "[swipe-db] recordSwipe — user_swipes:",
+        swipeError.message,
+      );
+      return { success: false, isLiked, poolLow: false };
+    }
+  }
+
+  // ── 4b. Insert user_liked jika like ────────────────────────────────────
+  if (isLiked) {
+    const { error: likedError } = await client.from("user_liked").insert({
       user_id: userId,
       media_type: mediaType,
       movie_id: movieId ?? null,
       series_id: seriesId ?? null,
-      action,
-      swiped_at: new Date().toISOString(),
-    },
-    { onConflict: movieId ? "user_id,movie_id" : "user_id,series_id" },
-  );
+      liked_at: new Date().toISOString(),
+    });
 
-  if (swipeError) {
-    console.error("[swipe-db] recordSwipe — user_swipes:", swipeError.message);
-    return { success: false, isLiked, poolLow: false };
-  }
-
-  // ── 4b. Upsert user_liked jika like ────────────────────────────────────
-  if (isLiked) {
-    const { error: likedError } = await supabase.from("user_liked").upsert(
-      {
-        user_id: userId,
-        media_type: mediaType,
-        movie_id: movieId ?? null,
-        series_id: seriesId ?? null,
-        liked_at: new Date().toISOString(),
-      },
-      {
-        onConflict: movieId ? "user_id,movie_id" : "user_id,series_id",
-        ignoreDuplicates: true,
-      },
-    );
-
-    if (likedError) {
-      // Non-fatal — swipe sudah tersimpan
+    if (likedError && likedError.code !== "23505") {
+      // Non-fatal
       console.error("[swipe-db] recordSwipe — user_liked:", likedError.message);
     }
   }
 
   // ── 4c. Mark pool row served ───────────────────────────────────────────
   if (poolId && poolId > 0) {
-    await supabase
+    await client
       .from("user_recommendation_pool")
       .update({ served: true })
       .eq("id", poolId)
-      .eq("user_type", "user"); // jangan sentuh guest pool
+      .eq("user_type", "user");
   }
 
   // ── 4d. Update user_preferences (async, non-blocking) ─────────────────
-  updatePreferences({ userId, mediaType, movieId, seriesId, action }).catch(
-    (err) => console.error("[swipe-db] updatePreferences:", err),
-  );
+  // Pakai client yang sama agar RLS terpenuhi
+  updatePreferences({
+    client,
+    userId,
+    mediaType,
+    movieId,
+    seriesId,
+    action,
+  }).catch((err) => console.error("[swipe-db] updatePreferences:", err));
 
   // ── 4e. Cek sisa pool ──────────────────────────────────────────────────
-  const remaining = await getPoolCount(userId);
+  const remaining = await getPoolCount(client, userId);
   const poolLow = remaining < 50;
 
-  // Enqueue recommendation job jika pool sudah menipis
   if (poolLow) {
-    supabase
+    client
       .from("recommendation_jobs")
       .insert({ user_id: userId, trigger_reason: "pool_low" })
       .then(({ error }) => {
@@ -284,33 +327,33 @@ function applyDelta(map: ScoreMap, keys: string[], delta: number): ScoreMap {
 }
 
 async function updatePreferences(params: {
+  client: SupabaseClient;
   userId: string;
   mediaType: MediaType;
   movieId?: number;
   seriesId?: number;
   action: SwipeAction;
 }): Promise<void> {
-  const { userId, mediaType, movieId, seriesId, action } = params;
+  const { client, userId, mediaType, movieId, seriesId, action } = params;
   const delta = SCORE_DELTA[action];
 
-  // Ambil genre_ids, cast person_ids, dan language dari film/series yang di-swipe
   let genreKeys: string[] = [];
   let castKeys: string[] = [];
   let languageKeys: string[] = [];
 
   if (mediaType === "movie" && movieId) {
     const [genreRes, castRes, movieRes] = await Promise.allSettled([
-      supabase
+      client
         .from("movie_genres")
         .select("genres(tmdb_genre_id)")
         .eq("movie_id", movieId),
-      supabase
+      client
         .from("movie_cast")
         .select("person_id")
         .eq("movie_id", movieId)
         .order("cast_order")
         .limit(5),
-      supabase
+      client
         .from("movies")
         .select("original_language")
         .eq("id", movieId)
@@ -335,17 +378,17 @@ async function updatePreferences(params: {
 
   if (mediaType === "tv" && seriesId) {
     const [genreRes, castRes, seriesRes] = await Promise.allSettled([
-      supabase
+      client
         .from("tv_genres")
         .select("genres(tmdb_genre_id)")
         .eq("series_id", seriesId),
-      supabase
+      client
         .from("tv_cast")
         .select("person_id")
         .eq("series_id", seriesId)
         .order("cast_order")
         .limit(5),
-      supabase
+      client
         .from("tv_series")
         .select("original_language")
         .eq("id", seriesId)
@@ -368,8 +411,7 @@ async function updatePreferences(params: {
     }
   }
 
-  // Fetch preference row yang ada, atau buat baru
-  const { data: prefRow } = await supabase
+  const { data: prefRow } = await client
     .from("user_preferences")
     .select("genre_scores, cast_scores, language_scores, total_swipes")
     .eq("user_id", userId)
@@ -377,7 +419,7 @@ async function updatePreferences(params: {
 
   const current = prefRow ?? {};
 
-  await supabase.from("user_preferences").upsert(
+  await client.from("user_preferences").upsert(
     {
       user_id: userId,
       genre_scores: applyDelta(current.genre_scores ?? {}, genreKeys, delta),

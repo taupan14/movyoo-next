@@ -320,15 +320,27 @@ async function syncMovie(
   if (cast.length) {
     await supabase.from("movie_cast").delete().eq("movie_id", movieId);
 
-    const castRows = cast.slice(0, 20).map((c) => ({
-      movie_id: movieId,
-      person_id: c.id,
-      name: c.name,
-      character: c.character ?? null,
-      profile_path: c.profile_path ?? null,
-      department: "Acting",
-      order_index: c.order ?? 0,
-    }));
+    // Deduplicate: jika person_id sama, ambil yang order-nya lebih kecil
+    const seen = new Map<number, (typeof cast)[number]>();
+    for (const c of cast) {
+      const existing = seen.get(c.id);
+      if (!existing || c.order < existing.order) {
+        seen.set(c.id, c);
+      }
+    }
+
+    const castRows = [...seen.values()]
+      .sort((a, b) => a.order - b.order)
+      .slice(0, 20)
+      .map((c) => ({
+        movie_id: movieId,
+        person_id: c.id,
+        name: c.name,
+        character: c.character ?? null,
+        profile_path: c.profile_path ?? null,
+        department: "Acting",
+        order_index: c.order ?? 0,
+      }));
 
     const { error: castError } = await supabase
       .from("movie_cast")
@@ -417,15 +429,26 @@ async function syncMovie(
         (platformData ?? []).map((p) => [p.tmdb_provider_id, p.id]),
       );
 
-      const platformRows = providerEntries
-        .map((p) => ({
-          movie_id: movieId,
-          platform_id: platformMap.get(p.tmdb_provider_id),
-          region: "ID",
-          type: p.type,
-          updated_at: new Date().toISOString(),
-        }))
-        .filter((r) => r.platform_id !== undefined);
+      // Dedup by composite key (movie_id, platform_id, region, type)
+      const seen = new Map<string, object>();
+
+      for (const p of providerEntries) {
+        const platformId = platformMap.get(p.tmdb_provider_id);
+        if (platformId === undefined) continue;
+
+        const key = `${movieId}|${platformId}|ID|${p.type}`;
+        if (!seen.has(key)) {
+          seen.set(key, {
+            movie_id: movieId,
+            platform_id: platformId,
+            region: "ID",
+            type: p.type,
+            updated_at: new Date().toISOString(),
+          });
+        }
+      }
+
+      const platformRows = [...seen.values()];
 
       if (platformRows.length) {
         const { error: platformError } = await supabase

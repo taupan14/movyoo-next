@@ -45,7 +45,7 @@ async function fetchTrendingMovies(limit: number) {
   const { data } = await supabase
     .from("movie_categories")
     .select(
-      "movies(id, title, original_title, original_language, poster_path, backdrop_path, vote_average, release_date, overview_en, overview)",
+      "movies(id, tmdb_id, title, original_title, original_language, poster_path, backdrop_path, vote_average, release_date, overview_en, overview)",
     )
     .eq("category", "trending")
     .eq("region", "ID")
@@ -56,6 +56,7 @@ async function fetchTrendingMovies(limit: number) {
 }
 
 async function fetchTrendingTV(limit: number) {
+  // Coba dari tv_categories dulu
   const { data: catData } = await supabase
     .from("tv_categories")
     .select("series_id")
@@ -64,12 +65,26 @@ async function fetchTrendingTV(limit: number) {
     .limit(limit);
 
   const ids = (catData ?? []).map((r: any) => Number(r.series_id));
-  if (!ids.length) return [];
+
+  // Jika tv_categories kosong, fallback ke query langsung berdasarkan popularity
+  if (!ids.length) {
+    const { data } = await supabase
+      .from("tv_series")
+      .select(
+        "id, tmdb_id, name, poster_path, backdrop_path, vote_average, first_air_date, overview_en, overview",
+      )
+      .not("poster_path", "is", null)
+      .gt("tmdb_id", 0)
+      .gte("vote_average", 6.0)
+      .order("popularity", { ascending: false })
+      .limit(limit);
+    return data ?? [];
+  }
 
   const { data } = await supabase
     .from("tv_series")
     .select(
-      "id, name, poster_path, backdrop_path, vote_average, first_air_date, overview_en, overview",
+      "id, tmdb_id, name, poster_path, backdrop_path, vote_average, first_air_date, overview_en, overview",
     )
     .in("id", ids);
 
@@ -80,7 +95,7 @@ async function fetchHiddenGemMovies(limit: number) {
   const { data } = await supabase
     .from("movies")
     .select(
-      "id, title, original_title, original_language, poster_path, backdrop_path, vote_average, release_date, overview_en, overview",
+      "id, tmdb_id, title, original_title, original_language, poster_path, backdrop_path, vote_average, release_date, overview_en, overview",
     )
     .gte("vote_average", HIDDEN_GEM_MIN_VOTE)
     .lte("popularity", HIDDEN_GEM_MAX_POP)
@@ -97,7 +112,7 @@ async function fetchHiddenGemTV(limit: number) {
   const { data } = await supabase
     .from("tv_series")
     .select(
-      "id, name, poster_path, backdrop_path, vote_average, first_air_date, overview_en, overview",
+      "id, tmdb_id, name, poster_path, backdrop_path, vote_average, first_air_date, overview_en, overview",
     )
     .gte("vote_average", HIDDEN_GEM_MIN_VOTE)
     .lte("popularity", HIDDEN_GEM_MAX_POP)
@@ -115,7 +130,7 @@ async function fetchWildcardMovies(limit: number) {
   const { data } = await supabase
     .from("movies")
     .select(
-      "id, title, original_title, original_language, poster_path, backdrop_path, vote_average, release_date, overview_en, overview",
+      "id, tmdb_id, title, original_title, original_language, poster_path, backdrop_path, vote_average, release_date, overview_en, overview",
     )
     .gte("vote_average", 6.5)
     .gte("popularity", 10)
@@ -132,7 +147,7 @@ async function fetchWildcardTV(limit: number) {
   const { data } = await supabase
     .from("tv_series")
     .select(
-      "id, name, poster_path, backdrop_path, vote_average, first_air_date, overview_en, overview",
+      "id, tmdb_id, name, poster_path, backdrop_path, vote_average, first_air_date, overview_en, overview",
     )
     .gte("vote_average", 6.5)
     .gte("popularity", 10)
@@ -164,7 +179,9 @@ async function buildMovieRows(
       backdrop_path: m.backdrop_path,
       vote_average: m.vote_average,
       release_date: m.release_date,
-      overview: m.overview_en || m.overview || "",
+      overview: m.overview,
+      overview_en: m.overview_en,
+      tmdb_id: m.tmdb_id,
     });
 
     rows.push({
@@ -197,7 +214,9 @@ async function buildTvRows(
       backdrop_path: s.backdrop_path,
       vote_average: s.vote_average,
       first_air_date: s.first_air_date,
-      overview: s.overview_en || s.overview || "",
+      overview: s.overview,
+      overview_en: s.overview_en,
+      tmdb_id: s.tmdb_id,
     });
 
     rows.push({
@@ -283,7 +302,32 @@ Deno.serve(async (req) => {
       ...wildcardTVRows,
     ];
 
-    if (allRows.length === 0) {
+    console.log(
+      `[refresh-guest-pool] Rows built — trending: ${trendingMovieRows.length}m/${trendingTVRows.length}tv, hidden_gem: ${hiddenGemMovieRows.length}m/${hiddenGemTVRows.length}tv, wildcard: ${wildcardMovieRows.length}m/${wildcardTVRows.length}tv, total: ${allRows.length}`,
+    );
+
+    // Deduplikasi — satu movie_id / series_id hanya boleh muncul sekali di guest pool
+    const seenMovies = new Set<number>();
+    const seenSeries = new Set<number>();
+    const uniqueRows = allRows.filter((row) => {
+      if (row.media_type === "movie" && row.movie_id !== null) {
+        if (seenMovies.has(row.movie_id)) return false;
+        seenMovies.add(row.movie_id);
+        return true;
+      }
+      if (row.media_type === "tv" && row.series_id !== null) {
+        if (seenSeries.has(row.series_id)) return false;
+        seenSeries.add(row.series_id);
+        return true;
+      }
+      return false;
+    });
+
+    console.log(
+      `[refresh-guest-pool] After dedup: ${uniqueRows.length} unique rows`,
+    );
+
+    if (uniqueRows.length === 0) {
       return new Response(
         JSON.stringify({ success: false, error: "No candidates found" }),
         { status: 500, headers: { "Content-Type": "application/json" } },
@@ -300,12 +344,12 @@ Deno.serve(async (req) => {
       throw new Error(`Delete old guest pool failed: ${deleteError.message}`);
     }
 
-    // 4. Insert guest pool baru (batch 25 untuk hindari payload limit)
+    // 4. Insert guest pool baru (batch 25)
     const BATCH = 25;
     let inserted = 0;
 
-    for (let i = 0; i < allRows.length; i += BATCH) {
-      const batch = allRows.slice(i, i + BATCH);
+    for (let i = 0; i < uniqueRows.length; i += BATCH) {
+      const batch = uniqueRows.slice(i, i + BATCH);
       const { error: insertError } = await supabase
         .from("user_recommendation_pool")
         .insert(batch);
@@ -321,11 +365,11 @@ Deno.serve(async (req) => {
     }
 
     console.log(
-      `[refresh-guest-pool] Done. Inserted ${inserted}/${allRows.length} rows.`,
+      `[refresh-guest-pool] Done. Inserted ${inserted}/${uniqueRows.length} rows.`,
     );
 
     return new Response(
-      JSON.stringify({ success: true, inserted, total: allRows.length }),
+      JSON.stringify({ success: true, inserted, total: uniqueRows.length }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
   } catch (err) {

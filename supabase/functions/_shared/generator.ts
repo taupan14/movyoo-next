@@ -175,7 +175,7 @@ async function fetchPersonalMovies(
   const { data: movies } = await supabase
     .from("movies")
     .select(
-      "id, title, original_title, original_language, poster_path, backdrop_path, vote_average, release_date, overview_en, overview, popularity, movie_genres(genres(tmdb_genre_id)), movie_cast(person_id, cast_order)",
+      "id, tmdb_id, title, original_title, original_language, poster_path, backdrop_path, vote_average, release_date, overview_en, overview, popularity, movie_genres(genres(tmdb_genre_id)), movie_cast(person_id, cast_order)",
     )
     .in("id", candidateIds.slice(0, 500))
     .gte("vote_average", MIN_VOTE_AVERAGE)
@@ -233,7 +233,7 @@ async function fetchPersonalTV(
   const { data: series } = await supabase
     .from("tv_series")
     .select(
-      "id, name, original_language, poster_path, backdrop_path, vote_average, first_air_date, overview_en, overview, popularity, tv_genres(genres(tmdb_genre_id)), tv_cast(person_id, cast_order)",
+      "id, tmdb_id, name, original_language, poster_path, backdrop_path, vote_average, first_air_date, overview_en, overview, popularity, tv_genres(genres(tmdb_genre_id)), tv_cast(person_id, cast_order)",
     )
     .in("id", candidateIds.slice(0, 500))
     .gte("vote_average", MIN_VOTE_AVERAGE)
@@ -271,7 +271,7 @@ async function fetchWildcard(
     supabase
       .from("movies")
       .select(
-        "id, title, original_title, original_language, poster_path, backdrop_path, vote_average, release_date, overview_en, overview, popularity, movie_genres(genres(tmdb_genre_id)), movie_cast(person_id, cast_order)",
+        "id, tmdb_id, title, original_title, original_language, poster_path, backdrop_path, vote_average, release_date, overview_en, overview, popularity, movie_genres(genres(tmdb_genre_id)), movie_cast(person_id, cast_order)",
       )
       .gte("vote_average", 7.0)
       .not("poster_path", "is", null)
@@ -281,7 +281,7 @@ async function fetchWildcard(
     supabase
       .from("tv_series")
       .select(
-        "id, name, original_language, poster_path, backdrop_path, vote_average, first_air_date, overview_en, overview, popularity, tv_genres(genres(tmdb_genre_id)), tv_cast(person_id, cast_order)",
+        "id, tmdb_id, name, original_language, poster_path, backdrop_path, vote_average, first_air_date, overview_en, overview, popularity, tv_genres(genres(tmdb_genre_id)), tv_cast(person_id, cast_order)",
       )
       .gte("vote_average", 7.0)
       .not("poster_path", "is", null)
@@ -470,7 +470,9 @@ export async function generateUserPool(
         vote_average: raw.vote_average,
         release_date: raw.release_date,
         first_air_date: raw.first_air_date,
+        tmdb_id: raw.tmdb_id,
         overview: raw.overview,
+        overview_en: raw.overview_en,
       },
     );
     rows.push({

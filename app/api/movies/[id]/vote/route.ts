@@ -1,5 +1,10 @@
+// app/api/movies/[id]/vote/route.ts
+
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase"; // service role client
+import { createSupabaseServer } from "@/lib/supabase-server";
+import { processAward } from "@/lib/progression";
+import type { AwardMeta } from "@/types/progression";
 
 export async function GET(
   req: NextRequest,
@@ -71,10 +76,6 @@ export async function POST(
   const body = await req.json();
   const { type, vote, action } = body;
 
-  // type   : "worth_it" | "pace" | "mood"
-  // vote   : nilai vote (e.g. "yes", "slow", "ketawa")
-  // action : "add" | "remove"
-
   if (!type || !vote || !action)
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
 
@@ -88,7 +89,7 @@ export async function POST(
   if (movieErr || !movieRow)
     return NextResponse.json({ error: "Movie not found" }, { status: 404 });
 
-  const movieId = movieRow.id; // ← internal id yang benar
+  const movieId = movieRow.id;
   if (Number.isNaN(movieId))
     return NextResponse.json({ error: "Invalid movie id" }, { status: 400 });
 
@@ -124,6 +125,48 @@ export async function POST(
       { error: error.message, details: error.details, hint: error.hint },
       { status: 500 },
     );
+  }
+
+  // ── +XP: hanya untuk action='add', hanya pertama kali vote film ini ──────
+  // Cek dari auth user — fire and forget
+  if (action === "add") {
+    createSupabaseServer()
+      .then(async (authClient) => {
+        const {
+          data: { user },
+        } = await authClient.auth.getUser();
+        if (!user) return;
+
+        // Cek apakah user sudah pernah vote film ini sebelumnya
+        // dengan melihat xp_transactions untuk movie_review + ref_id ini
+        const { data: prevVote } = await authClient
+          .from("xp_transactions")
+          .select("id")
+          .eq("user_id", user.id)
+          .eq("source", "movie_review")
+          .eq("ref_id", movieId)
+          .maybeSingle();
+
+        // Sudah pernah vote film ini → tidak dapat XP lagi
+        if (prevVote) return;
+
+        const meta: AwardMeta = {
+          media_type: "movie",
+          movie_id: movieId,
+          tmdb_id: tmdbId,
+          vote_type: type,
+        };
+
+        await processAward(
+          authClient,
+          user.id,
+          "movie_review",
+          undefined,
+          movieId,
+          meta,
+        );
+      })
+      .catch((err) => console.error("[vote] processAward:", err));
   }
 
   return NextResponse.json({ ok: true });

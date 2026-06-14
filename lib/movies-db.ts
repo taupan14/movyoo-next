@@ -67,7 +67,7 @@ async function fetchCategory(
     updated_at,
     movies (
       id, tmdb_id, title, original_title, original_language, poster_path, backdrop_path,
-      vote_average, release_date, popularity, overview, overview_en
+      vote_average, release_date, popularity, overview, overview_en, movie_genres(genres(name))
     )
   `,
     )
@@ -103,6 +103,9 @@ async function fetchCategory(
         release_date: m.release_date,
         popularity: Number(m.popularity),
         overview: pickOverview(m, lang),
+        genres: (m.movie_genres ?? [])
+          .map((mg: any) => mg.genres?.name)
+          .filter(Boolean) as number[],
       };
     })
     .filter(Boolean) as CachedMovie[];
@@ -169,25 +172,20 @@ async function fetchIndonesian(
       `,
     )
     .eq("original_language", "id")
-    .gt("tmdb_id", 0);
+    .gt("tmdb_id", 0)
+    .not("poster_path", "is", null);
 
   switch (category) {
     case "top_rated":
       query = query
-        .order("vote_count", { ascending: false })
+        .or("original_language.neq.id,vote_average.lt.9")
         .order("vote_average", { ascending: false });
       break;
-
     case "popularity":
-      query = query
-        .order("vote_count", { ascending: false })
-        .order("popularity", { ascending: false });
+      query = query.order("vote_count", { ascending: false });
       break;
-
     default:
-      query = query
-        .order("release_date", { ascending: false })
-        .order("vote_count", { ascending: false });
+      query = query.order("release_date", { ascending: false });
       break;
   }
 
@@ -539,7 +537,8 @@ export async function fetchExploreMovies(
       { count: "exact" },
     )
     // Poin 1: hanya tampilkan data dengan tmdb_id valid (> 0)
-    .gt("tmdb_id", 0);
+    .gt("tmdb_id", 0)
+    .not("poster_path", "is", null);
 
   if (filteredIds !== null) {
     query = query.in("id", filteredIds);
@@ -575,17 +574,15 @@ export async function fetchExploreMovies(
   // Sort
   switch (sort) {
     case "top_rated":
-      query = query.order("vote_average", { ascending: false });
+      query = query
+        .or("original_language.neq.id,vote_average.lt.9")
+        .order("vote_average", { ascending: false });
       break;
     case "popular":
-      query = query
-        .order("vote_count", { ascending: false })
-        .order("popularity", { ascending: false });
+      query = query.order("vote_count", { ascending: false });
       break;
     default:
-      query = query
-        .order("release_date", { ascending: false })
-        .order("vote_count", { ascending: false });
+      query = query.order("release_date", { ascending: false });
       break;
   }
 

@@ -2,6 +2,8 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabase-server";
+import { processAward } from "@/lib/progression";
+import type { AwardMeta } from "@/types/progression";
 
 // GET /api/watchlist?status=want_to_watch&media_type=movie
 export async function GET(request: NextRequest) {
@@ -60,8 +62,6 @@ export async function GET(request: NextRequest) {
 }
 
 // POST /api/watchlist — tambah item
-// Menggunakan check-then-insert/update alih-alih upsert agar tidak bergantung
-// pada named unique index di PostgREST (yang kadang tidak dikenali dari constraint saja).
 export async function POST(request: NextRequest) {
   const supabase = await createSupabaseServer();
   const {
@@ -102,7 +102,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: checkError.message }, { status: 500 });
   }
 
-  // ── 2a. Sudah ada → UPDATE status saja ───────────────────────────────────
+  // ── 2a. Sudah ada → UPDATE status saja (tidak dapat XP) ──────────────────
   if (existing) {
     const { data, error } = await supabase
       .from("user_watchlist")
@@ -114,7 +114,7 @@ export async function POST(request: NextRequest) {
 
     if (error)
       return NextResponse.json({ error: error.message }, { status: 500 });
-    return NextResponse.json(data, { status: 200 }); // 200 = updated, bukan created
+    return NextResponse.json(data, { status: 200 });
   }
 
   // ── 2b. Belum ada → INSERT baru ───────────────────────────────────────────
@@ -132,6 +132,22 @@ export async function POST(request: NextRequest) {
 
   if (error)
     return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // ── +XP: hanya untuk insert baru, fire and forget ────────────────────────
+  const meta: AwardMeta = {
+    media_type,
+    movie_id: media_type === "movie" ? Number(movie_id) : undefined,
+    series_id: media_type === "tv" ? Number(series_id) : undefined,
+  };
+  processAward(
+    supabase,
+    user.id,
+    "watchlist_add",
+    undefined,
+    media_type === "movie" ? Number(movie_id) : Number(series_id),
+    meta,
+  ).catch((err) => console.error("[watchlist] processAward:", err));
+
   return NextResponse.json(data, { status: 201 });
 }
 

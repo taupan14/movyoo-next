@@ -58,6 +58,9 @@
   .glass {
     @apply bg-white/5 backdrop-blur-xl border border-white/10;
   }
+  .glass-borderless {
+    @apply bg-white/5 backdrop-blur-xl;
+  }
   .glass-strong {
     @apply bg-white/10 backdrop-blur-2xl border border-white/10;
   }
@@ -250,4 +253,14 @@
 
 .animate-accordion-up {
   animation: accordion-up 0.2s ease-out;
+}
+
+/* globals.css */
+@keyframes progress {
+  from {
+    width: 0%;
+  }
+  to {
+    width: 100%;
+  }
 }

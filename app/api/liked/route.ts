@@ -1,7 +1,9 @@
-// app/api/liked/route.ts — FILE BARU
+// app/api/liked/route.ts
 
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabase-server";
+import { processAward } from "@/lib/progression";
+import type { AwardMeta } from "@/types/progression";
 
 export async function GET() {
   const supabase = await createSupabaseServer();
@@ -77,7 +79,7 @@ export async function POST(request: NextRequest) {
 
   const { data: existing } = await existingQuery.maybeSingle();
 
-  // Sudah ada → return data existing saja (idempoten)
+  // Sudah ada → return data existing saja (idempoten, tidak dapat XP)
   if (existing) {
     return NextResponse.json(existing, { status: 200 });
   }
@@ -96,6 +98,50 @@ export async function POST(request: NextRequest) {
 
   if (error)
     return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // ── +XP: hanya untuk insert baru, fire and forget ────────────────────────
+  // Fetch genre_ids dari DB untuk trigger genre achievement
+  const fetchGenreIds = async (): Promise<number[]> => {
+    if (media_type === "movie" && movie_id) {
+      const { data: genres } = await supabase
+        .from("movie_genres")
+        .select("genres(tmdb_genre_id)")
+        .eq("movie_id", movie_id);
+      return (genres ?? [])
+        .map((g: any) => g.genres?.tmdb_genre_id)
+        .filter(Boolean);
+    }
+    if (media_type === "tv" && series_id) {
+      const { data: genres } = await supabase
+        .from("tv_genres")
+        .select("genres(tmdb_genre_id)")
+        .eq("series_id", series_id);
+      return (genres ?? [])
+        .map((g: any) => g.genres?.tmdb_genre_id)
+        .filter(Boolean);
+    }
+    return [];
+  };
+
+  fetchGenreIds()
+    .then((genre_ids) => {
+      const meta: AwardMeta = {
+        media_type,
+        movie_id: media_type === "movie" ? Number(movie_id) : undefined,
+        series_id: media_type === "tv" ? Number(series_id) : undefined,
+        genre_ids,
+      };
+      return processAward(
+        supabase,
+        user.id,
+        "swipe_like",
+        undefined,
+        media_type === "movie" ? Number(movie_id) : Number(series_id),
+        meta,
+      );
+    })
+    .catch((err) => console.error("[liked] processAward:", err));
+
   return NextResponse.json(data, { status: 201 });
 }
 

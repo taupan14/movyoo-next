@@ -2,22 +2,6 @@
  * GET /api/swipe-pick
  *
  * Mengembalikan batch item untuk Swipe Pick feed.
- * Semua data dibaca dari user_recommendation_pool — zero JOIN.
- *
- * Auth:
- *   - Logged-in → pool personal user (user_type='user')
- *   - Guest     → shared guest pool  (user_type='guest')
- *
- * Query params:
- *   lang   — 'id' | 'en'  (default: 'en')
- *   limit  — jumlah item  (default: 10, max: 20)
- *
- * Response:
- *   {
- *     items:    SwipeFeedItem[],
- *     source:   'pool' | 'guest_pool',
- *     poolLeft: number | null,   // null jika guest
- *   }
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -59,7 +43,7 @@ export async function GET(req: NextRequest) {
   } = await supabaseServer.auth.getUser();
 
   try {
-    // ── Guest → shared guest pool ────────────────────────────────────────
+    // ── Guest → shared guest pool (anon client di dalam fetchGuestFeed) ──
     if (!user) {
       const items = await fetchGuestFeed(limit);
       return NextResponse.json({
@@ -69,8 +53,8 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // ── Logged-in → personal pool ────────────────────────────────────────
-    const items = await fetchSwipeFeed(user.id, limit);
+    // ── Logged-in → personal pool (pass supabaseServer) ─────────────────
+    const items = await fetchSwipeFeed(supabaseServer, user.id, limit);
 
     // Pool kosong / belum di-generate → fallback ke guest pool
     if (items.length === 0) {
@@ -82,7 +66,7 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const poolLeft = await getPoolCount(user.id);
+    const poolLeft = await getPoolCount(supabaseServer, user.id);
 
     return NextResponse.json({
       items,
