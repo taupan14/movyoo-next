@@ -119,8 +119,19 @@ export interface UserChallenge {
 
 // ─── API response types ────────────────────────────────────────────────────────
 
+export interface StreakBonus {
+  streak_days: number;
+  pts_bonus: number;
+  xp_bonus: number;
+}
+
+export interface StreakResult {
+  current_streak: number;
+  streak_bonus: StreakBonus[];
+}
+
 export interface AwardResult {
-  tx_id: number;
+  tx_id: number | null;
   leveled_up: boolean;
   old_level: number;
   new_level: number;
@@ -128,6 +139,9 @@ export interface AwardResult {
   total_xp: number;
   points: number;
   tickets: number;
+  // Field dari award_currency_with_cap
+  points_awarded: number; // jumlah points aktual yang diberikan (setelah cap)
+  points_capped: boolean; // true jika dipotong karena daily cap
 }
 
 export interface CompletedChallenge {

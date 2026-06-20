@@ -195,24 +195,29 @@ export async function POST(req: NextRequest) {
       // 2. Update challenge progress (dengan evaluasi tier + condition)
       // 3. Update achievement progress (genre, activity, dsb)
       // 4. Auto-claim reward jika challenge/achievement baru selesai
-      const { awards, completed_challenges, achievement_updates } =
-        await processAward(
-          supabaseServer,
-          user.id,
-          "swipe_like",
-          undefined,
-          refId,
-          meta,
-        );
+      // 5. Streak check + bonus
+      const {
+        awards,
+        completed_challenges,
+        achievement_updates,
+        streak_result,
+      } = await processAward(
+        supabaseServer,
+        user.id,
+        "swipe_like",
+        undefined,
+        refId,
+        meta,
+      );
 
-      // ── Session complete: award +20 XP setiap kelipatan 20 swipe like ────
+      // ── Session complete: award +20 XP +10 Points setiap kelipatan 20 swipe like ──
       // Dihitung server-side dari user_swipes hari ini — tidak bisa dimanipulasi
       const { count: todayLikes } = await supabaseServer
         .from("user_swipes")
         .select("id", { count: "exact", head: true })
         .eq("user_id", user.id)
         .eq("action", "like")
-        .gte("swiped_at", new Date().toISOString().split("T")[0]); // dari awal hari ini
+        .gte("swiped_at", new Date().toISOString().split("T")[0]);
 
       if (todayLikes && todayLikes % 20 === 0) {
         const sessionResult = await processAward(
@@ -234,6 +239,7 @@ export async function POST(req: NextRequest) {
         awards,
         completed_challenges,
         achievement_updates,
+        streak_result, // null jika bukan swipe pertama hari ini
         progression,
       };
     }

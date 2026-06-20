@@ -267,3 +267,27 @@ jobs:
 
           DELETED=$(echo "$HTTP_BODY" | grep -o '"deleted":[0-9]*' | grep -o '[0-9]*' || echo "0")
           echo "✅ Weekly challenges cleanup done. Deleted: $DELETED old rows"
+
+  # ── 6. Generate trivia questions ──────────────────────────────────────────
+  generate-trivia-questions:
+    name: Generate Trivia Questions
+    runs-on: ubuntu-latest
+    if: |
+      (github.event_name == 'schedule' && github.event.schedule == '0 18 * * *') ||
+      (github.event_name == 'workflow_dispatch' && (
+        github.event.inputs.worker == 'all' ||
+        github.event.inputs.worker == 'generate-trivia-questions'
+      ))
+    steps:
+      - name: Invoke generate-trivia-questions
+        run: |
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            "${{ env.SUPABASE_URL }}/functions/v1/generate-trivia-questions" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "Content-Type: application/json")
+          HTTP_BODY=$(echo "$RESPONSE" | head -n -1)
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n 1)
+          echo "Status: $HTTP_CODE | Response: $HTTP_BODY"
+          if [ "$HTTP_CODE" != "200" ]; then exit 1; fi
+          INSERTED=$(echo "$HTTP_BODY" | grep -o '"inserted":[0-9]*' | grep -o '[0-9]*' || echo "0")
+          echo "✅ Trivia questions generated. Inserted: $INSERTED questions"

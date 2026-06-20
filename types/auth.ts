@@ -55,6 +55,9 @@ export interface Collection {
   updated_at: string;
   item_count?: number;
   cover_poster?: string | null;
+  // Koleksi hasil unlock achievement (read-only, tidak bisa edit/hapus)
+  is_achievement?: boolean;
+  achievement_key?: string | null;
 }
 
 export interface CollectionItem {

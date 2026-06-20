@@ -37,7 +37,7 @@ const navItems = [
   { href: "/mood", icon: Brain, labelKey: "nav_mood" as const },
   { href: "/swipe", icon: Zap, labelKey: "nav_swipe" as const },
   // { href: "/watchlist", icon: Heart, labelKey: "nav_watchlist" as const },
-  { href: "/battle", icon: Swords, labelKey: "nav_battle" as const },
+  // { href: "/battle", icon: Swords, labelKey: "nav_battle" as const },
   { href: "/quiz", icon: Flame, labelKey: "nav_quiz" as const },
   // {
   //   href: "/coming-soon",

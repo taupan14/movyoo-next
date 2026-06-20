@@ -25,7 +25,8 @@ const VALID_SOURCES = [
   "swipe_session_complete",
   "watchlist_add",
   "movie_rate",
-  "movie_review",
+  // movie_review tidak ada di sini — hanya boleh dipanggil dari server
+  // via /api/movies/[id]/vote route, bukan dari frontend langsung
   "battle_win",
   "trivia_correct",
   "trivia_session_complete",
@@ -102,7 +103,7 @@ export async function POST(request: NextRequest) {
           : undefined);
 
     // 4. Proses award
-    const { awards, completed_challenges, achievement_updates } =
+    const { awards, completed_challenges, achievement_updates, streak_result } =
       await processAward(
         supabase,
         user.id,
@@ -120,6 +121,7 @@ export async function POST(request: NextRequest) {
       awards,
       completed_challenges,
       achievement_updates,
+      streak_result,
       progression,
     });
   } catch (err) {

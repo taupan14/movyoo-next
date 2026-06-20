@@ -17,6 +17,8 @@ import type {
   LevelThreshold,
   UserProgression,
   AwardMeta,
+  StreakResult,
+  StreakBonus,
 } from "@/types/progression";
 import {
   getAwardConfig,
@@ -55,6 +57,8 @@ function getAnonClient(): SupabaseClient {
 
 // ─── Award currency ────────────────────────────────────────────────────────────
 // Lewat security definer function — anon key cukup.
+// Pakai award_currency_with_cap untuk enforce daily points cap (100 pts/hari).
+// XP dan tickets tidak dibatasi.
 async function awardOneCurrency(
   client: SupabaseClient,
   userId: string,
@@ -64,7 +68,7 @@ async function awardOneCurrency(
   refId?: number,
   meta?: AwardMeta,
 ): Promise<AwardResult> {
-  const { data, error } = await client.rpc("award_currency", {
+  const { data, error } = await client.rpc("award_currency_with_cap", {
     p_user_id: userId,
     p_amount: amount,
     p_currency: currency,
@@ -73,7 +77,8 @@ async function awardOneCurrency(
     p_meta: meta ?? null,
   });
 
-  if (error) throw new Error(`award_currency failed: ${error.message}`);
+  if (error)
+    throw new Error(`award_currency_with_cap failed: ${error.message}`);
   return data as AwardResult;
 }
 
@@ -91,8 +96,10 @@ export async function processAward(
   awards: AwardResult[];
   completed_challenges: CompletedChallenge[];
   achievement_updates: AchievementProgress[];
+  streak_result: StreakResult | null;
 }> {
   const awards: AwardResult[] = [];
+  let streak_result: StreakResult | null = null;
 
   // 1. Award currency berdasarkan config
   const configs = getAwardConfig(source);
@@ -374,10 +381,57 @@ export async function processAward(
     }
   }
 
+  // 6. Streak check — hanya untuk swipe_like
+  // Dihitung server-side dari DB, tidak bisa dimanipulasi frontend
+  if (source === "swipe_like") {
+    const { data: streakData, error: streakError } = await client.rpc(
+      "update_swipe_streak",
+      { p_user_id: userId },
+    );
+
+    if (streakError) {
+      console.error("update_swipe_streak error:", streakError);
+    } else {
+      streak_result = {
+        current_streak: streakData?.current_streak ?? 0,
+        streak_bonus: streakData?.streak_bonus ?? [],
+      };
+
+      // Award bonus dari streak milestone jika ada
+      for (const bonus of streak_result.streak_bonus as StreakBonus[]) {
+        if (bonus.xp_bonus > 0) {
+          const streakAward = await awardOneCurrency(
+            client,
+            userId,
+            bonus.xp_bonus,
+            "xp",
+            "admin_grant",
+            undefined,
+            { reason: "streak_bonus", streak_days: bonus.streak_days },
+          );
+          awards.push(streakAward);
+        }
+        if (bonus.pts_bonus > 0) {
+          const streakAward = await awardOneCurrency(
+            client,
+            userId,
+            bonus.pts_bonus,
+            "points",
+            "admin_grant",
+            undefined,
+            { reason: "streak_bonus", streak_days: bonus.streak_days },
+          );
+          awards.push(streakAward);
+        }
+      }
+    }
+  }
+
   return {
     awards,
     completed_challenges: completedChallenges,
     achievement_updates: achievementUpdates,
+    streak_result,
   };
 }
 

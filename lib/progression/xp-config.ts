@@ -13,46 +13,66 @@ export interface AwardConfig {
 export type AwardMap = AwardConfig[];
 
 const XP_CONFIG: Record<XpSource, AwardMap> = {
+  // swipe_like: XP only, tidak ada points (terlalu mudah didapat)
+  // Points dari swipe datang dari: session complete + streak bonus
   swipe_like: [{ currency: "xp", amount: 1 }],
-  swipe_session_complete: [{ currency: "xp", amount: 20 }],
-  watchlist_add: [{ currency: "xp", amount: 5 }],
-  movie_rate: [{ currency: "xp", amount: 10 }],
-  movie_review: [
-    { currency: "xp", amount: 15 },
+  // Setiap 20 swipe like = sesi selesai → XP + Points
+  swipe_session_complete: [
+    { currency: "xp", amount: 20 },
+    { currency: "points", amount: 10 },
+  ],
+  // Watchlist add — engagement ringan
+  watchlist_add: [
+    { currency: "xp", amount: 5 },
+    { currency: "points", amount: 2 },
+  ],
+  // Rate film — lebih aktif dari watchlist
+  movie_rate: [
+    { currency: "xp", amount: 10 },
     { currency: "points", amount: 5 },
   ],
+  // Vote/review — butuh effort, reward lebih tinggi
+  movie_review: [
+    { currency: "xp", amount: 15 },
+    { currency: "points", amount: 8 },
+  ],
+  // Challenge rewards — amount di-override dari challenge config
   daily_challenge: [
-    { currency: "xp", amount: 0 }, // jumlah override dari challenge config
+    { currency: "xp", amount: 0 },
     { currency: "points", amount: 0 },
   ],
   weekly_challenge: [
     { currency: "xp", amount: 0 },
     { currency: "points", amount: 0 },
   ],
+  // Battle — skill-based, reward lebih tinggi dari swipe
   battle_win: [
     { currency: "xp", amount: 8 },
-    { currency: "points", amount: 3 },
+    { currency: "points", amount: 5 },
   ],
+  // Trivia — knowledge-based
   trivia_correct: [{ currency: "xp", amount: 5 }],
   trivia_session_complete: [
     { currency: "xp", amount: 15 },
-    { currency: "points", amount: 5 },
+    { currency: "points", amount: 8 },
   ],
+  // Achievement — amount di-override dari achievement config
   achievement_unlock: [
-    { currency: "xp", amount: 0 }, // override dari achievement config
+    { currency: "xp", amount: 0 },
     { currency: "points", amount: 0 },
   ],
+  // Social / competitive
   friend_challenge_win: [
     { currency: "xp", amount: 25 },
-    { currency: "points", amount: 10 },
+    { currency: "points", amount: 15 },
   ],
+  // Collection complete — milestone besar
   collection_complete: [
     { currency: "xp", amount: 50 },
     { currency: "points", amount: 50 },
   ],
-  admin_grant: [
-    { currency: "xp", amount: 0 }, // fully override dari caller
-  ],
+  // Admin grant — fully override dari caller
+  admin_grant: [{ currency: "xp", amount: 0 }],
 };
 
 export function getAwardConfig(source: XpSource): AwardMap {

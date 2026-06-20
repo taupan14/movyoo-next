@@ -19,8 +19,8 @@ export async function GET() {
     .select(
       `
       id, media_type, movie_id, series_id, liked_at,
-      movies ( id, title, poster_path, vote_average ),
-      tv_series ( id, name, poster_path, vote_average )
+      movies ( id, tmdb_id, title, poster_path, vote_average ),
+      tv_series ( id, tmdb_id, name, poster_path, vote_average )
     `,
     )
     .eq("user_id", user.id)
@@ -29,16 +29,26 @@ export async function GET() {
   if (error)
     return NextResponse.json({ error: error.message }, { status: 500 });
 
+  // console.log(error);
+  // console.log(`[liked] Fetched ${data?.length} items`);
+  // console.log(data);
   const items = (data ?? []).map((row: any) => ({
     id: row.id,
     media_type: row.media_type,
     movie_id: row.movie_id,
     series_id: row.series_id,
+    tmdb_id:
+      row.media_type === "movie" ? row.movies?.tmdb_id : row.tv_series?.tmdb_id,
     liked_at: row.liked_at,
-    title: row.movies?.title ?? row.tv_series?.name ?? "",
-    poster_path: row.movies?.poster_path ?? row.tv_series?.poster_path ?? null,
+    title: row.media_type === "movie" ? row.movies?.title : row.tv_series?.name,
+    poster_path:
+      row.media_type === "movie"
+        ? row.movies?.poster_path
+        : row.tv_series?.poster_path,
     vote_average: Number(
-      row.movies?.vote_average ?? row.tv_series?.vote_average ?? 0,
+      row.media_type === "movie"
+        ? row.movies?.vote_average
+        : row.tv_series?.vote_average,
     ),
   }));
 
