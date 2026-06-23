@@ -1,0 +1,61 @@
+name: Daily Leaving Soon Sync
+
+on:
+  schedule:
+    # Jam 07.00 WIB (00:00 UTC) — jalankan setelah sync_tmdb utama selesai
+    # sehingga tabel movies & tv_series sudah fresh
+    - cron: "0 0 * * *" # movie + tv (full sync)
+    - cron: "0 12 * * *" # movie only (mid-day refresh, jam 19.00 WIB)
+  workflow_dispatch:
+    inputs:
+      type:
+        description: "Content type to sync"
+        required: false
+        default: "all"
+        type: choice
+        options:
+          - all
+          - movie
+          - tv
+      limit:
+        description: "Max items per content type (default: 50)"
+        required: false
+        default: "50"
+      dry_run:
+        description: "Dry run (log only, no DB writes)"
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  # ── Full sync: movie + TV (sekali sehari jam 07.00 WIB) ───────────────────
+  sync-leaving-soon-full:
+    if: github.event.schedule == '0 0 * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync leaving soon (all)
+        run: |
+          TYPE="${{ github.event.inputs.type || 'all' }}"
+          LIMIT="${{ github.event.inputs.limit || '50' }}"
+          DRY_RUN="${{ github.event.inputs.dry_run || 'false' }}"
+
+          curl -s -X POST \
+            "https://xlfchtwebtehpuiaqush.supabase.co/functions/v1/sync-leaving-soon?type=${TYPE}&limit=${LIMIT}&dry_run=${DRY_RUN}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "Content-Type: application/json" \
+            --max-time 280 \
+            -w "\nHTTP Status: %{http_code}\n"
+
+  # ── Mid-day refresh: movie only (jam 19.00 WIB) ───────────────────────────
+  sync-leaving-soon-movie:
+    if: github.event.schedule == '0 12 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync leaving soon (movie only)
+        run: |
+          curl -s -X POST \
+            "https://xlfchtwebtehpuiaqush.supabase.co/functions/v1/sync-leaving-soon?type=movie&limit=50" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "Content-Type: application/json" \
+            --max-time 280 \
+            -w "\nHTTP Status: %{http_code}\n"

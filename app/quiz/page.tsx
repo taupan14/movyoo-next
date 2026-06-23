@@ -47,6 +47,7 @@ import type {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const TIME_PER_QUESTION = 15; // detik
+const AUTO_NEXT_DELAY = 2000; // ms sebelum otomatis lanjut ke soal berikutnya
 const DIFFICULTY_LABELS: Record<TriviaDifficulty, string> = {
   easy: "Mudah",
   medium: "Sedang",
@@ -199,9 +200,12 @@ export default function QuizPage() {
   const [userRank, setUserRank] = useState<LeaderboardEntry | null>(null);
 
   const [loading, setLoading] = useState(false);
+  const [loadingLabel, setLoadingLabel] = useState("Menyiapkan soal...");
   const [error, setError] = useState<string | null>(null);
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const autoNextRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [autoNextProgress, setAutoNextProgress] = useState(100);
 
   const currentQ: TriviaQuestion | null =
     session?.questions?.[currentIdx] ?? null;
@@ -251,6 +255,38 @@ export default function QuizPage() {
 
   useEffect(() => () => stopTimer(), [stopTimer]);
 
+  // ── Auto-next setelah jawab ──────────────────────────────────────────────
+  useEffect(() => {
+    if (phase !== "answered") {
+      if (autoNextRef.current) clearTimeout(autoNextRef.current);
+      setAutoNextProgress(100);
+      return;
+    }
+
+    // Animasi progress bar mengecil selama AUTO_NEXT_DELAY
+    const steps = 20;
+    const stepMs = AUTO_NEXT_DELAY / steps;
+    let currentStep = 0;
+
+    const progressInterval = setInterval(() => {
+      currentStep++;
+      setAutoNextProgress(Math.max(0, 100 - (currentStep / steps) * 100));
+      if (currentStep >= steps) clearInterval(progressInterval);
+    }, stepMs);
+
+    autoNextRef.current = setTimeout(() => {
+      clearInterval(progressInterval);
+      setAutoNextProgress(0);
+      nextQuestion();
+    }, AUTO_NEXT_DELAY);
+
+    return () => {
+      clearInterval(progressInterval);
+      if (autoNextRef.current) clearTimeout(autoNextRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
+
   // ── Start session ────────────────────────────────────────────────────────
   const startSession = async () => {
     if (!user) {
@@ -259,6 +295,7 @@ export default function QuizPage() {
     }
     setLoading(true);
     setError(null);
+    setLoadingLabel("Menyiapkan soal...");
     setPhase("loading");
 
     const params = new URLSearchParams({
@@ -344,6 +381,7 @@ export default function QuizPage() {
   // ── Complete session ──────────────────────────────────────────────────────
   const completeSession = async () => {
     if (!session) return;
+    setLoadingLabel("Menampilkan hasil...");
     setPhase("loading");
 
     const res = await fetch(
@@ -451,7 +489,7 @@ export default function QuizPage() {
       <div className="min-h-screen flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
           <Loader2 className="w-8 h-8 animate-spin text-primary" />
-          <p className="text-sm text-muted-foreground">Menyiapkan soal...</p>
+          <p className="text-sm text-muted-foreground">{loadingLabel}</p>
         </div>
       </div>
     );
@@ -753,7 +791,7 @@ export default function QuizPage() {
 
         {/* Image jika ada */}
         {currentQ.image_url && (
-          <div className="mb-4 rounded-2xl overflow-hidden aspect-video bg-white/5">
+          <div className="mb-4 rounded-2xl overflow-hidden aspect-[2/1] bg-white/5">
             <img
               src={currentQ.image_url}
               alt="Poster"
@@ -866,21 +904,34 @@ export default function QuizPage() {
           </div>
         )}
 
-        {/* Next button (setelah jawab) */}
+        {/* Auto-next countdown (setelah jawab) */}
         {phase === "answered" && (
           <button
             onClick={nextQuestion}
-            className="w-full py-3.5 rounded-xl gradient-primary text-white font-semibold text-sm hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
+            className="w-full py-3.5 rounded-xl border border-white/10 bg-white/[0.03] hover:bg-white/[0.06] transition-colors text-sm font-semibold text-muted-foreground flex flex-col items-center gap-2 overflow-hidden relative"
           >
-            {currentIdx + 1 >= session.total_questions ? (
-              <>
-                <Trophy className="w-4 h-4" /> Lihat Hasil
-              </>
-            ) : (
-              <>
-                Soal Berikutnya <ChevronRight className="w-4 h-4" />
-              </>
-            )}
+            <span className="flex items-center gap-2">
+              {currentIdx + 1 >= session.total_questions ? (
+                <>
+                  <Trophy className="w-4 h-4" /> Lihat Hasil
+                </>
+              ) : (
+                <>
+                  Soal Berikutnya <ChevronRight className="w-4 h-4" />
+                </>
+              )}
+            </span>
+            {/* Progress bar auto-next */}
+            <div className="w-full h-0.5 bg-white/10 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-primary/50 rounded-full transition-all"
+                style={{
+                  width: `${autoNextProgress}%`,
+                  transitionDuration: `${AUTO_NEXT_DELAY / 20}ms`,
+                  transitionTimingFunction: "linear",
+                }}
+              />
+            </div>
           </button>
         )}
       </div>
