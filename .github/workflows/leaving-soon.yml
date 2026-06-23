@@ -2,25 +2,32 @@ name: Daily Leaving Soon Sync
 
 on:
   schedule:
-    # Jam 07.00 WIB (00:00 UTC) — jalankan setelah sync_tmdb utama selesai
-    # sehingga tabel movies & tv_series sudah fresh
-    - cron: "0 0 * * *" # movie + tv (full sync)
-    - cron: "0 12 * * *" # movie only (mid-day refresh, jam 19.00 WIB)
+    # Streaming: jam 06.00 WIB (23:00 UTC sehari sebelumnya)
+    # Jalankan setelah sync_tmdb selesai agar movies/tv_series sudah fresh
+    - cron: "0 23 * * *"
+
+    # Cinema: jam 07.00 WIB (00:00 UTC) — setelah scraper cinema selesai
+    - cron: "0 0 * * *"
+
   workflow_dispatch:
     inputs:
-      type:
-        description: "Content type to sync"
+      job:
+        description: "Job to run"
         required: false
         default: "all"
         type: choice
         options:
           - all
-          - movie
-          - tv
-      limit:
-        description: "Max items per content type (default: 50)"
+          - streaming
+          - cinema
+      platform:
+        description: "Platform filter for streaming (netflix/disney+/prime/hbo-go/apple-tv)"
         required: false
-        default: "50"
+        default: ""
+      threshold_days:
+        description: "Cinema threshold days (default: 7)"
+        required: false
+        default: "7"
       dry_run:
         description: "Dry run (log only, no DB writes)"
         required: false
@@ -28,34 +35,47 @@ on:
         type: boolean
 
 jobs:
-  # ── Full sync: movie + TV (sekali sehari jam 07.00 WIB) ───────────────────
-  sync-leaving-soon-full:
-    if: github.event.schedule == '0 0 * * *' || github.event_name == 'workflow_dispatch'
+  # ── Streaming: Fetch expiring content dari Streaming Availability API ────────
+  sync-leaving-soon-streaming:
+    if: >
+      github.event.schedule == '0 23 * * *' ||
+      (github.event_name == 'workflow_dispatch' &&
+       (github.event.inputs.job == 'all' || github.event.inputs.job == 'streaming'))
     runs-on: ubuntu-latest
     steps:
-      - name: Sync leaving soon (all)
+      - name: Sync leaving soon (streaming)
         run: |
-          TYPE="${{ github.event.inputs.type || 'all' }}"
-          LIMIT="${{ github.event.inputs.limit || '50' }}"
+          PLATFORM="${{ github.event.inputs.platform || '' }}"
           DRY_RUN="${{ github.event.inputs.dry_run || 'false' }}"
 
+          QUERY="dry_run=${DRY_RUN}"
+          if [ -n "$PLATFORM" ]; then
+            QUERY="${QUERY}&platform=${PLATFORM}"
+          fi
+
           curl -s -X POST \
-            "https://xlfchtwebtehpuiaqush.supabase.co/functions/v1/sync-leaving-soon?type=${TYPE}&limit=${LIMIT}&dry_run=${DRY_RUN}" \
+            "https://xlfchtwebtehpuiaqush.supabase.co/functions/v1/sync-leaving-soon-streaming?${QUERY}" \
             -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
             -H "Content-Type: application/json" \
             --max-time 280 \
             -w "\nHTTP Status: %{http_code}\n"
 
-  # ── Mid-day refresh: movie only (jam 19.00 WIB) ───────────────────────────
-  sync-leaving-soon-movie:
-    if: github.event.schedule == '0 12 * * *'
+  # ── Cinema: Derive leaving soon dari showtimes ────────────────────────────────
+  sync-leaving-soon-cinema:
+    if: >
+      github.event.schedule == '0 0 * * *' ||
+      (github.event_name == 'workflow_dispatch' &&
+       (github.event.inputs.job == 'all' || github.event.inputs.job == 'cinema'))
     runs-on: ubuntu-latest
     steps:
-      - name: Sync leaving soon (movie only)
+      - name: Sync leaving soon (cinema)
         run: |
+          THRESHOLD="${{ github.event.inputs.threshold_days || '7' }}"
+          DRY_RUN="${{ github.event.inputs.dry_run || 'false' }}"
+
           curl -s -X POST \
-            "https://xlfchtwebtehpuiaqush.supabase.co/functions/v1/sync-leaving-soon?type=movie&limit=50" \
+            "https://xlfchtwebtehpuiaqush.supabase.co/functions/v1/sync-leaving-soon-cinema?threshold_days=${THRESHOLD}&dry_run=${DRY_RUN}" \
             -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
             -H "Content-Type: application/json" \
-            --max-time 280 \
+            --max-time 120 \
             -w "\nHTTP Status: %{http_code}\n"

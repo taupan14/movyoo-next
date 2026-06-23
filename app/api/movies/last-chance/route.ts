@@ -5,15 +5,15 @@
  *   lang        — 'id' | 'en'              (default: 'en')
  *   region      — e.g. 'ID', 'US'          (default: 'ID')
  *   type        — 'movie' | 'tv' | 'all'   (default: 'all')
- *   platform    — platform slug, opsional   (contoh: 'netflix')
- *   max_days    — integer, default 30       (ambil yang leaving dalam N hari)
+ *   platform    — platform slug, opsional
+ *   max_days    — integer, default 30
  *   limit       — integer, default 50
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { fetchLeavingSoon } from "@/lib/leaving-soon-db";
 
-export const revalidate = 300; // 5 menit — data ini tidak real-time
+export const revalidate = 300;
 
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
@@ -24,14 +24,13 @@ export async function GET(req: NextRequest) {
   const platform = searchParams.get("platform") ?? undefined;
   const maxDays = Math.min(
     90,
-    Math.max(1, parseInt(searchParams.get("max_days") ?? "30", 10) || 30),
+    Math.max(1, parseInt(searchParams.get("max_days") ?? "45") || 45),
   );
   const limit = Math.min(
     100,
-    Math.max(1, parseInt(searchParams.get("limit") ?? "50", 10) || 50),
+    Math.max(1, parseInt(searchParams.get("limit") ?? "50") || 50),
   );
 
-  // Validasi type
   const validTypes = ["movie", "tv", "all"] as const;
   const contentType = validTypes.includes(type as any)
     ? (type as "movie" | "tv" | "all")

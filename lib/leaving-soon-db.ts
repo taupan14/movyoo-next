@@ -1,11 +1,10 @@
 /**
  * leaving-soon-db.ts
- * Controller layer: query tabel `leaving_soon` + relasi movies / tv_series.
- * Digunakan oleh API route /api/movies/last-chance
+ * Query tabel leaving_soon + movies dengan two-step fetch.
+ * Menggunakan createSupabaseServer() agar kompatibel di API route (server-side).
  */
 
-import { supabase } from "./supabase";
-import type { CachedMovie } from "./movies-db";
+import { createSupabaseServer } from "./supabase-server";
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 
@@ -13,16 +12,13 @@ export type ContentType = "movie" | "tv";
 export type UrgencyTier = "critical" | "urgent" | "warning";
 
 export interface LeavingSoonItem {
-  // Identitas baris leaving_soon
   id: number;
   content_type: ContentType;
   platform_slug: string;
-  available_until: string; // ISO date string 'YYYY-MM-DD'
-  days_left: number; // dihitung di query-level (server time)
-  tier: UrgencyTier; // dihitung dari days_left
-
-  // Data konten (movie atau tv)
-  content_id: number; // movies.id atau tv_series.id
+  available_until: string;
+  days_left: number;
+  tier: UrgencyTier;
+  content_id: number;
   tmdb_id: number;
   title: string;
   poster_path: string | null;
@@ -34,12 +30,12 @@ export interface LeavingSoonItem {
 }
 
 export interface FetchLeavingSoonParams {
-  lang: string; // 'id' | 'en'
-  region: string; // 'ID' | 'US'
-  contentType?: ContentType | "all"; // default: 'all'
-  platform?: string; // slug filter, opsional
-  maxDays?: number; // ambil yang leaving dalam N hari, default 30
-  limit?: number; // default 50
+  lang: string;
+  region: string;
+  contentType?: ContentType | "all";
+  platform?: string;
+  maxDays?: number;
+  limit?: number;
 }
 
 export interface LeavingSoonResult {
@@ -58,17 +54,17 @@ function computeTier(daysLeft: number): UrgencyTier {
   return "warning";
 }
 
+function daysBetween(from: Date, to: Date): number {
+  return Math.max(0, Math.ceil((to.getTime() - from.getTime()) / 86400000));
+}
+
 function pickOverview(
   row: { overview?: string | null; overview_en?: string | null },
   lang: string,
 ): string {
+  // overview = bahasa original, overview_en = english
   if (lang === "id") return row.overview || row.overview_en || "";
   return row.overview_en || row.overview || "";
-}
-
-function daysBetween(from: Date, to: Date): number {
-  const ms = to.getTime() - from.getTime();
-  return Math.max(0, Math.ceil(ms / 86400000));
 }
 
 // ─── MAIN FETCH ───────────────────────────────────────────────────────────────
@@ -81,149 +77,163 @@ export async function fetchLeavingSoon(
     region,
     contentType = "all",
     platform,
-    maxDays = 30,
+    maxDays = 45, // 45 hari — TTL sync adalah 30 hari, jadi harus lebih dari 30
     limit = 50,
   } = params;
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  // createSupabaseServer() adalah async — harus di-await
+  const supabase = await createSupabaseServer();
 
-  const maxDate = new Date(today);
+  // Gunakan tanggal WIB (UTC+7) agar konsisten dengan user di Indonesia
+  const nowWIB = new Date(Date.now() + 7 * 60 * 60 * 1000);
+  const todayStr = nowWIB.toISOString().slice(0, 10);
+
+  const maxDate = new Date(nowWIB);
   maxDate.setDate(maxDate.getDate() + maxDays);
-
-  const todayStr = today.toISOString().slice(0, 10);
   const maxDateStr = maxDate.toISOString().slice(0, 10);
 
-  // ── Query movie leaving_soon ──────────────────────────────────────────────
   let movieItems: LeavingSoonItem[] = [];
 
+  // ── Movie ──────────────────────────────────────────────────────────────────
   if (contentType === "all" || contentType === "movie") {
+    // Step 1: ambil baris leaving_soon untuk movie
     let q = supabase
       .from("leaving_soon")
-      .select(
-        `
-        id,
-        platform_slug,
-        available_until,
-        movies (
-          id, tmdb_id, title, original_title, original_language,
-          poster_path, backdrop_path, vote_average,
-          release_date, popularity, overview, overview_en
-        )
-        `,
-      )
+      .select("id, movie_id, platform_slug, available_until")
       .eq("content_type", "movie")
       .eq("region", region)
       .gte("available_until", todayStr)
       .lte("available_until", maxDateStr)
-      .order("available_until", { ascending: true })
-      .limit(limit);
-
-    if (platform) {
-      q = q.eq("platform_slug", platform);
-    }
-
-    const { data, error } = await q;
-
-    if (error) {
-      console.error(
-        "[leaving-soon-db] fetchLeavingSoon (movie):",
-        error.message,
-      );
-    } else {
-      movieItems = (data ?? [])
-        .map((row: any) => {
-          const m = row.movies;
-          if (!m) return null;
-
-          const availableUntil = new Date(row.available_until);
-          availableUntil.setHours(23, 59, 59, 0);
-          const daysLeft = daysBetween(today, availableUntil);
-
-          return {
-            id: row.id,
-            content_type: "movie" as ContentType,
-            platform_slug: row.platform_slug,
-            available_until: row.available_until,
-            days_left: daysLeft,
-            tier: computeTier(daysLeft),
-            content_id: m.id,
-            tmdb_id: m.tmdb_id,
-            title:
-              m.original_language === "id"
-                ? m.original_title || m.title
-                : m.title,
-            poster_path: m.poster_path,
-            backdrop_path: m.backdrop_path,
-            vote_average: Number(m.vote_average),
-            release_date: m.release_date ?? null,
-            popularity: Number(m.popularity),
-            overview: pickOverview(m, lang),
-          } satisfies LeavingSoonItem;
-        })
-        .filter(Boolean) as LeavingSoonItem[];
-    }
-  }
-
-  // ── Query tv leaving_soon ─────────────────────────────────────────────────
-  // TODO: Aktifkan setelah tabel tv_series tersedia
-  // Pola sama dengan di atas, ganti join ke tv_series
-  let tvItems: LeavingSoonItem[] = [];
-
-  if (contentType === "all" || contentType === "tv") {
-    // Placeholder — uncomment & sesuaikan kolom saat tabel tv_series siap:
-    /*
-    let q = supabase
-      .from("leaving_soon")
-      .select(`
-        id, platform_slug, available_until,
-        tv_series (
-          id, tmdb_id, name, original_name, original_language,
-          poster_path, backdrop_path, vote_average,
-          first_air_date, popularity, overview, overview_en
-        )
-      `)
-      .eq("content_type", "tv")
-      .eq("region", region)
-      .gte("available_until", todayStr)
-      .lte("available_until", maxDateStr)
+      .not("movie_id", "is", null)
       .order("available_until", { ascending: true })
       .limit(limit);
 
     if (platform) q = q.eq("platform_slug", platform);
 
-    const { data, error } = await q;
+    const { data: leavingRows, error: leavingError } = await q;
 
-    if (!error) {
-      tvItems = (data ?? []).map((row: any) => {
-        const s = row.tv_series;
-        if (!s) return null;
-        const availableUntil = new Date(row.available_until);
-        availableUntil.setHours(23, 59, 59, 0);
-        const daysLeft = daysBetween(today, availableUntil);
-        return {
-          id: row.id,
-          content_type: "tv",
-          platform_slug: row.platform_slug,
-          available_until: row.available_until,
-          days_left: daysLeft,
-          tier: computeTier(daysLeft),
-          content_id: s.id,
-          tmdb_id: s.tmdb_id,
-          title: s.name,
-          poster_path: s.poster_path,
-          backdrop_path: s.backdrop_path,
-          vote_average: Number(s.vote_average),
-          release_date: s.first_air_date ?? null,
-          popularity: Number(s.popularity),
-          overview: pickOverview(s, lang),
-        };
-      }).filter(Boolean) as LeavingSoonItem[];
+    if (leavingError) {
+      console.error(
+        "[leaving-soon-db] leaving_soon query error:",
+        leavingError.message,
+      );
+    } else if (leavingRows && leavingRows.length > 0) {
+      // Step 2: fetch data movies berdasarkan movie_id yang didapat
+      const movieIds = leavingRows.map((r: any) => r.movie_id);
+
+      const { data: movies, error: moviesError } = await supabase
+        .from("movies")
+        .select(
+          "id, tmdb_id, title, original_title, original_language, poster_path, backdrop_path, vote_average, release_date, popularity, overview, overview_en",
+        )
+        .in("id", movieIds);
+
+      if (moviesError) {
+        console.error(
+          "[leaving-soon-db] movies query error:",
+          moviesError.message,
+        );
+      } else {
+        // Map movie_id → movie object untuk lookup O(1)
+        const movieMap = new Map((movies ?? []).map((m: any) => [m.id, m]));
+
+        movieItems = leavingRows
+          .map((row: any) => {
+            const m = movieMap.get(row.movie_id);
+            if (!m) return null;
+
+            const availableUntil = new Date(row.available_until);
+            availableUntil.setHours(23, 59, 59, 0);
+            const daysLeft = daysBetween(nowWIB, availableUntil);
+
+            return {
+              id: row.id,
+              content_type: "movie" as ContentType,
+              platform_slug: row.platform_slug,
+              available_until: row.available_until,
+              days_left: daysLeft,
+              tier: computeTier(daysLeft),
+              content_id: m.id,
+              tmdb_id: m.tmdb_id,
+              title:
+                m.original_language === "id"
+                  ? m.original_title || m.title
+                  : m.title,
+              poster_path: m.poster_path,
+              backdrop_path: m.backdrop_path,
+              vote_average: Number(m.vote_average),
+              release_date: m.release_date ?? null,
+              popularity: Number(m.popularity),
+              overview: pickOverview(m, lang),
+            } satisfies LeavingSoonItem;
+          })
+          .filter(Boolean) as LeavingSoonItem[];
+      }
+    }
+  }
+
+  // ── TV Series (aktifkan saat tabel tv_series siap) ────────────────────────
+  let tvItems: LeavingSoonItem[] = [];
+
+  if (contentType === "all" || contentType === "tv") {
+    /*
+    // Step 1: ambil baris leaving_soon untuk tv
+    let q = supabase
+      .from("leaving_soon")
+      .select("id, tv_series_id, platform_slug, available_until")
+      .eq("content_type", "tv")
+      .eq("region", region)
+      .gte("available_until", todayStr)
+      .lte("available_until", maxDateStr)
+      .not("tv_series_id", "is", null)
+      .order("available_until", { ascending: true })
+      .limit(limit);
+
+    if (platform) q = q.eq("platform_slug", platform);
+
+    const { data: leavingRows, error: leavingError } = await q;
+
+    if (!leavingError && leavingRows?.length > 0) {
+      const seriesIds = leavingRows.map((r: any) => r.tv_series_id);
+
+      const { data: series, error: seriesError } = await supabase
+        .from("tv_series")
+        .select("id, tmdb_id, name, original_name, original_language, poster_path, backdrop_path, vote_average, first_air_date, popularity, overview, overview_en")
+        .in("id", seriesIds);
+
+      if (!seriesError) {
+        const seriesMap = new Map((series ?? []).map((s: any) => [s.id, s]));
+
+        tvItems = leavingRows.map((row: any) => {
+          const s = seriesMap.get(row.tv_series_id);
+          if (!s) return null;
+          const availableUntil = new Date(row.available_until);
+          availableUntil.setHours(23, 59, 59, 0);
+          const daysLeft = daysBetween(today, availableUntil);
+          return {
+            id: row.id,
+            content_type: "tv" as ContentType,
+            platform_slug: row.platform_slug,
+            available_until: row.available_until,
+            days_left: daysLeft,
+            tier: computeTier(daysLeft),
+            content_id: s.id,
+            tmdb_id: s.tmdb_id,
+            title: s.name,
+            poster_path: s.poster_path,
+            backdrop_path: s.backdrop_path,
+            vote_average: Number(s.vote_average),
+            release_date: s.first_air_date ?? null,
+            popularity: Number(s.popularity),
+            overview: pickOverview(s, lang),
+          };
+        }).filter(Boolean) as LeavingSoonItem[];
+      }
     }
     */
   }
 
-  // ── Merge & sort ──────────────────────────────────────────────────────────
+  // ── Merge & sort by days_left ascending ───────────────────────────────────
   const all = [...movieItems, ...tvItems].sort(
     (a, b) => a.days_left - b.days_left,
   );
