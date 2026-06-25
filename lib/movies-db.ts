@@ -72,7 +72,8 @@ async function fetchCategory(
   `,
     )
     .eq("category", category)
-    .eq("region", region);
+    .eq("region", region)
+    .not("movies.poster_path", "is", null);
 
   if (category === "upcoming") {
     query = query.order("updated_at", { ascending });
