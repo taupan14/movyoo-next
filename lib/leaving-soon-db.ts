@@ -126,7 +126,8 @@ export async function fetchLeavingSoon(
         .select(
           "id, tmdb_id, title, original_title, original_language, poster_path, backdrop_path, vote_average, release_date, popularity, overview, overview_en",
         )
-        .in("id", movieIds);
+        .in("id", movieIds)
+        .gt("tmdb_id", 0); // filter movie dengan tmdb_id negatif (data tidak valid dari scraper cinema)
 
       if (moviesError) {
         console.error(

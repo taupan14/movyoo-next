@@ -4,31 +4,24 @@
  * Sumber data: Streaming Availability API (movieofthenight.com)
  * Endpoint: GET /changes?change_type=expiring&country=id
  *
- * Flow:
- *   1. Fetch expiring content dari Streaming Availability API untuk region ID
- *   2. Per platform (netflix, disney+, prime, hbo, apple) — paginate sampai habis
- *   3. Match ke tabel movies / tv_series via tmdb_id
- *   4. Upsert ke tabel leaving_soon dengan available_until dari field expiresOn
- *   5. Hapus baris lama yang sudah tidak muncul di API (platform sudah remove konten)
- *
- * Query params:
- *   ?dry_run=true   — log saja, tidak write ke DB
- *   ?platform=netflix  — sync satu platform saja (opsional)
+ * Opsi B: jika tmdb_id tidak ditemukan di DB, auto-fetch dari TMDB
+ * dan insert ke tabel movies sebelum upsert ke leaving_soon.
  */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const STREAMING_API_BASE = "https://api.movieofthenight.com/v4";
-const SYNC_REGION = "id"; // Streaming Availability API pakai lowercase ISO
-const DB_REGION = "ID"; // DB kita pakai uppercase
+const TMDB_BASE = "https://api.themoviedb.org/3";
+const SYNC_REGION = "sg"; // Singapura — Indonesia tidak didukung API, SG katalognya paling mirip
+const DB_REGION = "ID";
 
-// Platform yang di-track: service_id di Streaming Availability API → platform_slug di DB
 const TRACKED_PLATFORMS: Record<string, string> = {
   netflix: "netflix",
   disney: "disney+",
   prime: "prime",
-  hbo: "hbo-go",
+  // hbo-go: dihapus — sudah tidak aktif di Indonesia
+  // vidio: dihapus — platform lokal ID, tidak didukung Streaming Availability API
   apple: "apple-tv",
 };
 
@@ -49,34 +42,48 @@ async function streamingApiFetch(
 ): Promise<any> {
   const url = new URL(`${STREAMING_API_BASE}${path}`);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-
-  const res = await fetch(url.toString(), {
-    headers: { "X-API-Key": apiKey },
-  });
-
+  const res = await fetch(url.toString(), { headers: { "X-API-Key": apiKey } });
   if (res.status === 429) {
-    // Rate limited — tunggu 2 detik lalu retry sekali
     await sleep(2000);
     const retry = await fetch(url.toString(), {
       headers: { "X-API-Key": apiKey },
     });
-    if (!retry.ok) throw new Error(`Streaming API ${retry.status} on ${path}`);
+    if (!retry.ok) throw new Error(`Streaming API ${retry.status}`);
     return retry.json();
   }
-
   if (!res.ok) throw new Error(`Streaming API ${res.status} on ${path}`);
   return res.json();
 }
 
-// ─── FETCH EXPIRING PER PLATFORM ──────────────────────────────────────────────
+async function tmdbFetch(
+  path: string,
+  apiKey: string,
+  attempt = 1,
+): Promise<any> {
+  const url = new URL(`${TMDB_BASE}${path}`);
+  url.searchParams.set("api_key", apiKey);
+  try {
+    const res = await fetch(url.toString());
+    if (!res.ok) throw new Error(`TMDB ${res.status}`);
+    return res.json();
+  } catch (err) {
+    if (attempt >= 3) throw err;
+    await sleep(500 * attempt);
+    return tmdbFetch(path, apiKey, attempt + 1);
+  }
+}
+
+// ─── TYPES ────────────────────────────────────────────────────────────────────
 
 interface ExpiringItem {
-  tmdbId: string; // format: "movie/12345" atau "tv/67890"
+  tmdbNumId: number;
   showType: "movie" | "series";
   platformSlug: string;
-  availableUntil: string; // YYYY-MM-DD
-  announcedAt: string; // ISO timestamp
+  availableUntil: string;
+  announcedAt: string;
 }
+
+// ─── FETCH EXPIRING PER PLATFORM ──────────────────────────────────────────────
 
 async function fetchExpiringForPlatform(
   serviceId: string,
@@ -94,17 +101,16 @@ async function fetchExpiringForPlatform(
       country: SYNC_REGION,
       catalogs: serviceId,
       item_type: "show",
-      include_unknown_dates: "false", // hanya yang punya tanggal pasti
+      include_unknown_dates: "false",
       order_direction: "asc",
     };
-
     if (cursor) params.cursor = cursor;
 
     let data: any;
     try {
       data = await streamingApiFetch("/changes", apiKey, params);
     } catch (err) {
-      console.error(`[${serviceId}] page ${page} fetch error:`, err.message);
+      console.error(`[${serviceId}] page ${page} error:`, err.message);
       break;
     }
 
@@ -113,17 +119,15 @@ async function fetchExpiringForPlatform(
 
     for (const change of changes) {
       const show = shows[change.showId];
-      if (!show) continue;
+      if (!show || !show.tmdbId || !change.timestamp) continue;
 
-      // Ambil TMDB id
-      const tmdbId = show.tmdbId; // format: "movie/12345" atau "tv/67890"
-      if (!tmdbId) continue;
-
-      // Timestamp expiry — skip jika null
-      if (!change.timestamp) continue;
+      // tmdbId format dari API: "movie/12345" atau "tv/67890"
+      const parts = show.tmdbId.split("/");
+      const tmdbNumId = parseInt(parts[1], 10);
+      if (!tmdbNumId) continue;
 
       items.push({
-        tmdbId,
+        tmdbNumId,
         showType: show.showType === "series" ? "series" : "movie",
         platformSlug,
         availableUntil: unixToDateStr(change.timestamp),
@@ -131,87 +135,265 @@ async function fetchExpiringForPlatform(
       });
     }
 
-    console.log(
-      `[${serviceId}] page ${page}: ${changes.length} changes fetched`,
-    );
-
+    console.log(`[${serviceId}] page ${page}: ${changes.length} items`);
     if (!data.hasMore) break;
     cursor = data.nextCursor;
-
-    // Jangan terlalu agresif hit API
     await sleep(300);
   }
 
   return items;
 }
 
-// ─── MATCH TMDB ID KE DB ID ───────────────────────────────────────────────────
+// ─── AUTO-SYNC MOVIE KE DB JIKA BELUM ADA (OPSI B) ───────────────────────────
+
+async function autoSyncMovieToDB(
+  tmdbId: number,
+  supabase: any,
+  tmdbApiKey: string,
+): Promise<number | null> {
+  console.log(`[auto-sync] Fetching movie tmdb_id=${tmdbId} from TMDB...`);
+  try {
+    const [detail, videos] = await Promise.all([
+      tmdbFetch(`/movie/${tmdbId}?language=en-US`, tmdbApiKey),
+      tmdbFetch(`/movie/${tmdbId}/videos?language=en-US`, tmdbApiKey),
+    ]);
+
+    if (!detail || detail.success === false) return null;
+
+    // Ambil trailer youtube key
+    const trailer = (videos.results ?? []).find(
+      (v: any) => v.type === "Trailer" && v.site === "YouTube",
+    );
+
+    // Insert ke tabel movies — tanpa genre_ids (disimpan di movie_genres)
+    const { data, error } = await supabase
+      .from("movies")
+      .upsert(
+        {
+          tmdb_id: detail.id,
+          title: detail.title,
+          original_title: detail.original_title,
+          original_language: detail.original_language,
+          overview: detail.overview,
+          overview_en: detail.overview,
+          poster_path: detail.poster_path,
+          backdrop_path: detail.backdrop_path,
+          release_date: detail.release_date || null,
+          vote_average: detail.vote_average,
+          vote_count: detail.vote_count,
+          popularity: detail.popularity,
+          runtime: detail.runtime,
+          trailer_key: trailer?.key ?? null,
+          status: detail.status,
+        },
+        { onConflict: "tmdb_id", ignoreDuplicates: false },
+      )
+      .select("id")
+      .single();
+
+    if (error) {
+      console.error(
+        `[auto-sync] Insert movie tmdb_id=${tmdbId} error:`,
+        error.message,
+      );
+      return null;
+    }
+
+    const movieDbId = data.id;
+
+    // Insert genre ke movie_genres via tmdb_genre_id → genres.id lookup
+    const tmdbGenreIds: number[] = (detail.genres ?? []).map((g: any) => g.id);
+    if (tmdbGenreIds.length > 0) {
+      const { data: genreRows } = await supabase
+        .from("genres")
+        .select("id, tmdb_genre_id")
+        .in("tmdb_genre_id", tmdbGenreIds);
+
+      if (genreRows && genreRows.length > 0) {
+        const genreInserts = genreRows.map((g: any) => ({
+          movie_id: movieDbId,
+          genre_id: g.id,
+        }));
+        await supabase.from("movie_genres").upsert(genreInserts, {
+          onConflict: "movie_id,genre_id",
+          ignoreDuplicates: true,
+        });
+      }
+    }
+
+    console.log(
+      `[auto-sync] Inserted movie tmdb_id=${tmdbId} → db id=${movieDbId}`,
+    );
+    return movieDbId;
+  } catch (err) {
+    console.error(`[auto-sync] Failed movie tmdb_id=${tmdbId}:`, err.message);
+    return null;
+  }
+}
+
+async function autoSyncTvToDB(
+  tmdbId: number,
+  supabase: any,
+  tmdbApiKey: string,
+): Promise<number | null> {
+  console.log(`[auto-sync] Fetching tv tmdb_id=${tmdbId} from TMDB...`);
+  try {
+    const detail = await tmdbFetch(`/tv/${tmdbId}?language=en-US`, tmdbApiKey);
+    if (!detail || detail.success === false) return null;
+
+    // Insert ke tabel tv_series — tanpa genre_ids (disimpan di tv_genres)
+    const { data, error } = await supabase
+      .from("tv_series")
+      .upsert(
+        {
+          tmdb_id: detail.id,
+          name: detail.name,
+          original_name: detail.original_name,
+          original_language: detail.original_language,
+          overview: detail.overview,
+          overview_en: detail.overview,
+          poster_path: detail.poster_path,
+          backdrop_path: detail.backdrop_path,
+          first_air_date: detail.first_air_date || null,
+          vote_average: detail.vote_average,
+          vote_count: detail.vote_count,
+          popularity: detail.popularity,
+          status: detail.status,
+          number_of_seasons: detail.number_of_seasons,
+          number_of_episodes: detail.number_of_episodes,
+        },
+        { onConflict: "tmdb_id", ignoreDuplicates: false },
+      )
+      .select("id")
+      .single();
+
+    if (error) {
+      console.error(
+        `[auto-sync] Insert tv tmdb_id=${tmdbId} error:`,
+        error.message,
+      );
+      return null;
+    }
+
+    const tvDbId = data.id;
+
+    // Insert genre ke tv_genres via tmdb_genre_id → genres.id lookup
+    const tmdbGenreIds: number[] = (detail.genres ?? []).map((g: any) => g.id);
+    if (tmdbGenreIds.length > 0) {
+      const { data: genreRows } = await supabase
+        .from("genres")
+        .select("id, tmdb_genre_id")
+        .in("tmdb_genre_id", tmdbGenreIds);
+
+      if (genreRows && genreRows.length > 0) {
+        const genreInserts = genreRows.map((g: any) => ({
+          series_id: tvDbId,
+          genre_id: g.id,
+        }));
+        await supabase.from("tv_genres").upsert(genreInserts, {
+          onConflict: "series_id,genre_id",
+          ignoreDuplicates: true,
+        });
+      }
+    }
+
+    console.log(`[auto-sync] Inserted tv tmdb_id=${tmdbId} → db id=${tvDbId}`);
+    return tvDbId;
+  } catch (err) {
+    console.error(`[auto-sync] Failed tv tmdb_id=${tmdbId}:`, err.message);
+    return null;
+  }
+}
+
+// ─── RESOLVE TMDB ID → DB ID (dengan auto-sync fallback) ─────────────────────
 
 async function resolveDbIds(
   items: ExpiringItem[],
   supabase: any,
+  tmdbApiKey: string,
 ): Promise<{
   movieItems: (ExpiringItem & { movieDbId: number })[];
   tvItems: (ExpiringItem & { tvDbId: number })[];
 }> {
-  const movieTmdbIds = items
-    .filter((i) => i.showType === "movie")
-    .map((i) => parseInt(i.tmdbId.replace("movie/", ""), 10))
-    .filter(Boolean);
+  const movieTmdbIds = [
+    ...new Set(
+      items.filter((i) => i.showType === "movie").map((i) => i.tmdbNumId),
+    ),
+  ];
+  const tvTmdbIds = [
+    ...new Set(
+      items.filter((i) => i.showType === "series").map((i) => i.tmdbNumId),
+    ),
+  ];
 
-  const tvTmdbIds = items
-    .filter((i) => i.showType === "series")
-    .map((i) => parseInt(i.tmdbId.replace("tv/", ""), 10))
-    .filter(Boolean);
-
-  // Fetch movies by tmdb_id
-  const movieMap = new Map<number, number>(); // tmdb_id → db id
+  // Fetch yang sudah ada di DB
+  const movieMap = new Map<number, number>();
   if (movieTmdbIds.length > 0) {
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from("movies")
       .select("id, tmdb_id")
       .in("tmdb_id", movieTmdbIds);
-
-    if (error) {
-      console.error("[resolveDbIds] movies:", error.message);
-    } else {
-      (data ?? []).forEach((m: any) => movieMap.set(m.tmdb_id, m.id));
-    }
+    (data ?? []).forEach((m: any) => movieMap.set(m.tmdb_id, m.id));
   }
 
-  // Fetch tv_series by tmdb_id
-  const tvMap = new Map<number, number>(); // tmdb_id → db id
+  const tvMap = new Map<number, number>();
   if (tvTmdbIds.length > 0) {
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from("tv_series")
       .select("id, tmdb_id")
       .in("tmdb_id", tvTmdbIds);
-
-    if (error) {
-      console.warn("[resolveDbIds] tv_series:", error.message);
-    } else {
-      (data ?? []).forEach((s: any) => tvMap.set(s.tmdb_id, s.id));
-    }
+    (data ?? []).forEach((s: any) => tvMap.set(s.tmdb_id, s.id));
   }
 
+  // Auto-sync yang belum ada — batch 3 sekaligus agar tidak terlalu lambat
+  const missingMovies = movieTmdbIds.filter((id) => !movieMap.has(id));
+  const missingTv = tvTmdbIds.filter((id) => !tvMap.has(id));
+
+  console.log(
+    `[resolveDbIds] Missing in DB: ${missingMovies.length} movies, ${missingTv.length} tv`,
+  );
+
+  for (let i = 0; i < missingMovies.length; i += 3) {
+    const batch = missingMovies.slice(i, i + 3);
+    const results = await Promise.all(
+      batch.map((id) => autoSyncMovieToDB(id, supabase, tmdbApiKey)),
+    );
+    batch.forEach((tmdbId, idx) => {
+      if (results[idx]) movieMap.set(tmdbId, results[idx]!);
+    });
+    if (i + 3 < missingMovies.length) await sleep(300);
+  }
+
+  for (let i = 0; i < missingTv.length; i += 3) {
+    const batch = missingTv.slice(i, i + 3);
+    const results = await Promise.all(
+      batch.map((id) => autoSyncTvToDB(id, supabase, tmdbApiKey)),
+    );
+    batch.forEach((tmdbId, idx) => {
+      if (results[idx]) tvMap.set(tmdbId, results[idx]!);
+    });
+    if (i + 3 < missingTv.length) await sleep(300);
+  }
+
+  // Build final lists
   const movieItems: (ExpiringItem & { movieDbId: number })[] = [];
   const tvItems: (ExpiringItem & { tvDbId: number })[] = [];
 
   for (const item of items) {
     if (item.showType === "movie") {
-      const tmdbNumId = parseInt(item.tmdbId.replace("movie/", ""), 10);
-      const dbId = movieMap.get(tmdbNumId);
+      const dbId = movieMap.get(item.tmdbNumId);
       if (dbId) movieItems.push({ ...item, movieDbId: dbId });
       else
         console.warn(
-          `[resolveDbIds] movie tmdb_id=${tmdbNumId} not found in DB`,
+          `[resolveDbIds] movie tmdb_id=${item.tmdbNumId} still not in DB after auto-sync`,
         );
     } else {
-      const tmdbNumId = parseInt(item.tmdbId.replace("tv/", ""), 10);
-      const dbId = tvMap.get(tmdbNumId);
+      const dbId = tvMap.get(item.tmdbNumId);
       if (dbId) tvItems.push({ ...item, tvDbId: dbId });
       else
-        console.warn(`[resolveDbIds] tv tmdb_id=${tmdbNumId} not found in DB`);
+        console.warn(
+          `[resolveDbIds] tv tmdb_id=${item.tmdbNumId} still not in DB after auto-sync`,
+        );
     }
   }
 
@@ -226,9 +408,6 @@ async function upsertToLeavingSoon(
   supabase: any,
   dryRun: boolean,
 ): Promise<{ upserted: number; errors: number }> {
-  let upserted = 0;
-  let errors = 0;
-
   const rows = [
     ...movieItems.map((item) => ({
       content_type: "movie",
@@ -257,61 +436,87 @@ async function upsertToLeavingSoon(
     return { upserted: rows.length, errors: 0 };
   }
 
-  // Upsert dalam batch 50
-  for (let i = 0; i < rows.length; i += 50) {
-    const batch = rows.slice(i, i + 50);
-    const { error } = await supabase.from("leaving_soon").upsert(batch, {
-      onConflict: "content_type,movie_id,tv_series_id,platform_slug,region",
-      ignoreDuplicates: false, // selalu update available_until & announced_at
-    });
+  let upserted = 0;
+  let errors = 0;
 
-    if (error) {
-      console.error(`[upsert] batch ${i}-${i + 50} error:`, error.message);
-      errors += batch.length;
-    } else {
-      upserted += batch.length;
+  // Pisah movie dan tv karena partial index berbeda
+  const movieRows = rows.filter((r: any) => r.content_type === "movie");
+  const tvRows = rows.filter((r: any) => r.content_type === "tv");
+
+  // Delete + insert untuk movie (partial index tidak support onConflict di Supabase JS)
+  if (movieRows.length > 0) {
+    const movieIds = [...new Set(movieRows.map((r: any) => r.movie_id))];
+    const platformSlugs = [
+      ...new Set(movieRows.map((r: any) => r.platform_slug)),
+    ];
+
+    await supabase
+      .from("leaving_soon")
+      .delete()
+      .eq("content_type", "movie")
+      .eq("region", DB_REGION)
+      .in("movie_id", movieIds)
+      .in("platform_slug", platformSlugs);
+
+    for (let i = 0; i < movieRows.length; i += 50) {
+      const batch = movieRows.slice(i, i + 50);
+      const { error } = await supabase.from("leaving_soon").insert(batch);
+      if (error) {
+        console.error(`[upsert] movie insert error:`, error.message);
+        errors += batch.length;
+      } else upserted += batch.length;
+    }
+  }
+
+  // Delete + insert untuk tv
+  if (tvRows.length > 0) {
+    const tvIds = [...new Set(tvRows.map((r: any) => r.tv_series_id))];
+    const platformSlugs = [...new Set(tvRows.map((r: any) => r.platform_slug))];
+
+    await supabase
+      .from("leaving_soon")
+      .delete()
+      .eq("content_type", "tv")
+      .eq("region", DB_REGION)
+      .in("tv_series_id", tvIds)
+      .in("platform_slug", platformSlugs);
+
+    for (let i = 0; i < tvRows.length; i += 50) {
+      const batch = tvRows.slice(i, i + 50);
+      const { error } = await supabase.from("leaving_soon").insert(batch);
+      if (error) {
+        console.error(`[upsert] tv insert error:`, error.message);
+        errors += batch.length;
+      } else upserted += batch.length;
     }
   }
 
   return { upserted, errors };
 }
 
-// ─── CLEANUP: hapus baris streaming yang sudah tidak ada di API ───────────────
+// ─── CLEANUP ──────────────────────────────────────────────────────────────────
 
 async function cleanupStaleStreaming(
-  freshItems: ExpiringItem[],
   supabase: any,
   dryRun: boolean,
 ): Promise<number> {
-  // Hapus baris lama yang:
-  // - source = streaming_availability_api (bukan manual, bukan cinema)
-  // - available_until sudah lewat hari ini
   const today = new Date().toISOString().slice(0, 10);
-
   if (dryRun) {
     const { count } = await supabase
       .from("leaving_soon")
       .select("id", { count: "exact", head: true })
       .eq("source", "streaming_availability_api")
       .lt("available_until", today);
-    console.log(
-      `[cleanup] [DRY] Would delete ${count ?? 0} expired streaming rows`,
-    );
+    console.log(`[cleanup] [DRY] Would delete ${count ?? 0} expired rows`);
     return count ?? 0;
   }
-
   const { count, error } = await supabase
     .from("leaving_soon")
     .delete({ count: "exact" })
     .eq("source", "streaming_availability_api")
     .lt("available_until", today);
-
-  if (error) {
-    console.error("[cleanup] stale streaming error:", error.message);
-    return 0;
-  }
-
-  console.log(`[cleanup] Deleted ${count ?? 0} expired streaming rows`);
+  if (error) console.error("[cleanup] error:", error.message);
+  else console.log(`[cleanup] Deleted ${count ?? 0} expired streaming rows`);
   return count ?? 0;
 }
 
@@ -320,19 +525,23 @@ async function cleanupStaleStreaming(
 serve(async (req) => {
   const url = new URL(req.url);
   const dryRun = url.searchParams.get("dry_run") === "true";
-  const platformFilter = url.searchParams.get("platform"); // opsional, filter satu platform
+  const platformFilter = url.searchParams.get("platform");
 
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
   const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const STREAMING_API_KEY = Deno.env.get("STREAMING_AVAILABILITY_API_KEY")!;
+  const TMDB_API_KEY = Deno.env.get("TMDB_API_KEY")!;
 
   if (!STREAMING_API_KEY) {
     return new Response(
-      JSON.stringify({
-        error: "STREAMING_AVAILABILITY_API_KEY env var not set",
-      }),
-      { status: 400, headers: { "Content-Type": "application/json" } },
+      JSON.stringify({ error: "STREAMING_AVAILABILITY_API_KEY not set" }),
+      { status: 400 },
     );
+  }
+  if (!TMDB_API_KEY) {
+    return new Response(JSON.stringify({ error: "TMDB_API_KEY not set" }), {
+      status: 400,
+    });
   }
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
@@ -348,6 +557,7 @@ serve(async (req) => {
   const stats = {
     platforms_synced: 0,
     total_expiring_found: 0,
+    auto_synced_to_db: 0,
     matched_in_db: 0,
     upserted: 0,
     errors: 0,
@@ -355,57 +565,60 @@ serve(async (req) => {
   };
 
   try {
-    // ── 1. Tentukan platform yang akan di-sync ──────────────────────────────
     const platformsToSync = platformFilter
       ? Object.entries(TRACKED_PLATFORMS).filter(
           ([, slug]) => slug === platformFilter,
         )
       : Object.entries(TRACKED_PLATFORMS);
 
-    if (platformsToSync.length === 0) {
-      throw new Error(
-        `Platform '${platformFilter}' not found in tracked platforms`,
-      );
-    }
+    if (platformsToSync.length === 0)
+      throw new Error(`Platform '${platformFilter}' not found`);
 
-    // ── 2. Fetch expiring content per platform ──────────────────────────────
+    // 1. Fetch expiring per platform
     const allItems: ExpiringItem[] = [];
-
     for (const [serviceId, platformSlug] of platformsToSync) {
-      console.log(
-        `[main] Fetching expiring for ${serviceId} (${platformSlug})...`,
-      );
+      console.log(`[main] Fetching expiring for ${serviceId}...`);
       try {
         const items = await fetchExpiringForPlatform(
           serviceId,
           platformSlug,
           STREAMING_API_KEY,
         );
-        console.log(
-          `[main] ${serviceId}: ${items.length} expiring items found`,
-        );
         allItems.push(...items);
         stats.platforms_synced++;
+        console.log(`[main] ${serviceId}: ${items.length} expiring items`);
       } catch (err) {
-        console.error(`[main] Failed to fetch ${serviceId}:`, err.message);
+        console.error(`[main] ${serviceId} failed:`, err.message);
         stats.errors++;
       }
-
-      // Jeda antar platform agar tidak hit rate limit
       await sleep(500);
     }
 
     stats.total_expiring_found = allItems.length;
-    console.log(`[main] Total expiring items found: ${allItems.length}`);
 
-    // ── 3. Resolve TMDB id → DB id ─────────────────────────────────────────
-    const { movieItems, tvItems } = await resolveDbIds(allItems, supabase);
-    stats.matched_in_db = movieItems.length + tvItems.length;
-    console.log(
-      `[main] Matched in DB: ${movieItems.length} movies, ${tvItems.length} tv series`,
+    // 2. Resolve tmdb_id → db id (dengan auto-sync jika belum ada)
+    const beforeMovieCount =
+      (
+        await supabase
+          .from("movies")
+          .select("id", { count: "exact", head: true })
+      ).count ?? 0;
+    const { movieItems, tvItems } = await resolveDbIds(
+      allItems,
+      supabase,
+      TMDB_API_KEY,
     );
+    const afterMovieCount =
+      (
+        await supabase
+          .from("movies")
+          .select("id", { count: "exact", head: true })
+      ).count ?? 0;
+    stats.auto_synced_to_db =
+      (afterMovieCount as number) - (beforeMovieCount as number);
+    stats.matched_in_db = movieItems.length + tvItems.length;
 
-    // ── 4. Upsert ke leaving_soon ──────────────────────────────────────────
+    // 3. Upsert ke leaving_soon
     const { upserted, errors } = await upsertToLeavingSoon(
       movieItems,
       tvItems,
@@ -415,14 +628,9 @@ serve(async (req) => {
     stats.upserted = upserted;
     stats.errors += errors;
 
-    // ── 5. Cleanup expired rows ────────────────────────────────────────────
-    stats.expired_cleaned = await cleanupStaleStreaming(
-      allItems,
-      supabase,
-      dryRun,
-    );
+    // 4. Cleanup expired
+    stats.expired_cleaned = await cleanupStaleStreaming(supabase, dryRun);
 
-    // ── 6. Log result ──────────────────────────────────────────────────────
     await supabase.from("sync_logs").upsert({
       id: logId,
       sync_type: "leaving_soon_streaming",
@@ -447,7 +655,6 @@ serve(async (req) => {
     });
     return new Response(JSON.stringify({ error: err.message }), {
       status: 500,
-      headers: { "Content-Type": "application/json" },
     });
   }
 });

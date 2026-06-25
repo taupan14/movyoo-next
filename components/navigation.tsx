@@ -15,7 +15,7 @@ import {
   Swords,
   CalendarClock,
   Clock,
-  Search,
+  Gift, // ← tambah ini
   Globe,
   Menu,
   X,
@@ -36,14 +36,8 @@ const navItems = [
   { href: "/explore", icon: Compass, labelKey: "nav_explore" as const },
   { href: "/mood", icon: Brain, labelKey: "nav_mood" as const },
   { href: "/swipe", icon: Zap, labelKey: "nav_swipe" as const },
-  // { href: "/watchlist", icon: Heart, labelKey: "nav_watchlist" as const },
-  // { href: "/battle", icon: Swords, labelKey: "nav_battle" as const },
   { href: "/quiz", icon: Flame, labelKey: "nav_quiz" as const },
-  // {
-  //   href: "/coming-soon",
-  //   icon: CalendarClock,
-  //   labelKey: "nav_coming_soon" as const,
-  // },
+  { href: "/reward", icon: Gift, labelKey: "nav_reward" as const }, // ← tambah ini
   { href: "/last-chance", icon: Clock, labelKey: "nav_last_chance" as const },
 ];
 
@@ -180,7 +174,7 @@ export function Navigation() {
 
         {/* Bottom actions */}
         <div className="flex flex-col gap-1">
-          <Link
+          {/* <Link
             href="/search"
             onClick={() => go("/search")}
             className={cn(
@@ -191,7 +185,7 @@ export function Navigation() {
             )}
           >
             <Search className="w-5 h-5" />
-          </Link>
+          </Link> */}
           <button
             onClick={() => setLocale(locale === "id" ? "en" : "id")}
             className="w-11 h-11 rounded-xl flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all"
@@ -223,12 +217,12 @@ export function Navigation() {
             <span
               className={`${poppins.className} font-bold text-white text-lg tracking-wider`}
             >
-              Movyoo
+              Movyoo<span className="text-primary text-2xl">.</span>
             </span>
           </Link>
 
           <div className="flex items-center gap-1">
-            <Link
+            {/* <Link
               href="/search"
               onClick={() => go("/search")}
               className={cn(
@@ -239,7 +233,7 @@ export function Navigation() {
               )}
             >
               <Search className="w-4 h-4" />
-            </Link>
+            </Link> */}
             <button
               onClick={() => setLocale(locale === "id" ? "en" : "id")}
               className="w-9 h-9 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"

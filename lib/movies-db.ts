@@ -114,23 +114,25 @@ async function fetchCategory(
 async function fetchCategoryNowPlaying(
   lang: string,
   region: string,
-  limit = 12,
+  limit = 20,
 ): Promise<CachedMovie[]> {
-  const { data, error } = await supabase
-    .rpc("get_latest_movies_21cineplex", { p_limit: limit })
-    .order("created_at", { ascending: false });
+  const today = new Date().toISOString().split("T")[0]; // pakai helper WIB yang sudah ada, atau new Date().toISOString().split('T')[0]
+  // console.log(`[movies-db] fetchCategory(now_playing): ${today}`);
+
+  const { data, error } = await supabase.rpc("get_latest_movies_21cineplex", {
+    p_limit: limit,
+    p_date: today, // ← kirim tanggal hari ini
+  });
+  // hapus .order() — sudah dihandle di SQL
 
   if (error) {
     console.error(`[cinema-db] fetchCategory(now_playing):`, error.message);
     return [];
   }
 
-  // console.log(`[cinema-db] fetchCategory(now_playing): ${data?.length} items`);
-  // console.log(data);
   return (data ?? [])
     .map((row: any) => {
       const m = row;
-
       if (!m) return null;
       return {
         id: m.movie_id,
@@ -145,6 +147,33 @@ async function fetchCategoryNowPlaying(
       };
     })
     .filter(Boolean) as CachedMovie[];
+}
+
+// Helper dengan fallback mundur tanggal
+async function fetchCategoryNowPlayingWithFallback(
+  lang: string,
+  region: string,
+  limit = 20,
+  maxFallbackDays = 3, // mundur maksimal 3 hari
+): Promise<CachedMovie[]> {
+  for (let daysBack = 0; daysBack <= maxFallbackDays; daysBack++) {
+    const date = new Date(Date.now() - daysBack * 86400000)
+      .toISOString()
+      .split("T")[0];
+
+    const result = await fetchCategoryNowPlaying(lang, region, limit, date);
+
+    if (result.length > 0) {
+      if (daysBack > 0) {
+        console.warn(
+          `[cinema-db] nowPlaying fallback to ${date} (-${daysBack}d)`,
+        );
+      }
+      return result;
+    }
+  }
+
+  return [];
 }
 
 async function fetchIndonesian(
@@ -252,7 +281,7 @@ export async function fetchHomeMovies(lang: string, region: string) {
     indonesianPopRes,
   ] = await Promise.allSettled([
     fetchCategory("trending", lang, region, true, 10),
-    fetchCategoryNowPlaying(lang, region, 20),
+    fetchCategoryNowPlayingWithFallback(lang, region, 20),
     fetchCategory("upcoming", lang, region, false, 20),
     // fetchRecommended(lang, 20),
     fetchCategory("popular", lang, region, true, 20),

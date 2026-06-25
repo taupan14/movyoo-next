@@ -1,21 +1,9 @@
 /**
  * Supabase Edge Function: sync-leaving-soon-cinema
  *
- * Derive data "leaving soon" untuk bioskop dari tabel cinema_movies + showtimes.
- * Logic: film dianggap "leaving soon" jika MAX(show_date) jatuh dalam 7 hari ke depan.
- *
- * Flow:
- *   1. Query MAX(show_date) per movie_id dari tabel showtimes
- *   2. Filter yang last_show_date antara hari ini s/d 7 hari ke depan
- *   3. Upsert ke leaving_soon dengan:
- *      - content_type = 'movie'
- *      - platform_slug = 'cinema'
- *      - available_until = MAX(show_date) per film
- *   4. Hapus baris cinema yang filmnya sudah tidak tayang (tidak ada di showtimes aktif)
- *
- * Query params:
- *   ?dry_run=true      — log saja, tidak write ke DB
- *   ?threshold_days=7  — ambil film yang last show dalam N hari ke depan (default: 7)
+ * Fix: deduplicate by movie_id — satu film hanya muncul sekali
+ * meskipun tayang di banyak theater.
+ * Logic: ambil MAX(show_date) per movie_id, upsert satu baris per film.
  */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
@@ -29,12 +17,11 @@ serve(async (req) => {
   const dryRun = url.searchParams.get("dry_run") === "true";
   const thresholdDays = Math.min(
     30,
-    Math.max(1, parseInt(url.searchParams.get("threshold_days") ?? "7") || 7),
+    Math.max(1, parseInt(url.searchParams.get("threshold_days") ?? "21") || 21),
   );
 
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
   const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
   const logId = crypto.randomUUID();
 
@@ -60,72 +47,155 @@ serve(async (req) => {
   };
 
   try {
-    // ── 1. Query MAX(show_date) per movie_id yang masih aktif di showtimes ──
-    // Film yang last show-nya antara hari ini s/d threshold = "leaving soon"
-    // Film yang last show-nya sudah lewat hari ini = expired (hapus dari leaving_soon)
-    const { data: leavingSoonMovies, error: queryError } = await supabase.rpc(
+    // ── Query MAX(show_date) per movie_id ─────────────────────────────────
+    // Gunakan RPC jika ada, fallback ke application-level aggregate
+    let movies: { movie_id: number; last_show_date: string }[] = [];
+
+    const MIN_RUN_DAYS = 14; // Film harus sudah tayang >= 14 hari sebelum masuk leaving soon
+
+    const { data: rpcData, error: rpcError } = await supabase.rpc(
       "get_cinema_leaving_soon",
       {
         p_today: todayStr,
         p_threshold: thresholdStr,
+        p_min_run_days: MIN_RUN_DAYS,
       },
     );
 
-    if (queryError) {
-      // Fallback: jika RPC belum ada, pakai query manual
-      console.warn(
-        "[cinema] RPC not found, using fallback query:",
-        queryError.message,
-      );
+    if (!rpcError && rpcData) {
+      movies = rpcData;
+    } else {
+      console.warn("[cinema] RPC fallback:", rpcError?.message);
 
-      // Fallback query via raw SQL tidak tersedia di Supabase JS client,
-      // gunakan pendekatan alternatif dengan aggregate di application layer
-      const { data: showtimeAgg, error: showtimeError } = await supabase
-        .from("showtimes")
-        .select("movie_id, show_date")
-        .not("movie_id", "is", null)
-        .gte("show_date", todayStr)
-        .lte("show_date", thresholdStr)
-        .order("show_date", { ascending: false });
+      // Fallback: estimasi release_date + MIN_RUN_DAYS
+      // Ambil film yang sedang tayang hari ini (ada di showtimes H+0)
+      // dan release_date + MIN_RUN_DAYS masuk window threshold
+      // Fetch film yang tayang hari ini dari cinema_movies (bukan showtimes)
+      const { data: cinemaRows, error: cinemaError } = await supabase
+        .from("cinema_movies")
+        .select("movie_id")
+        .eq("show_date", todayStr)
+        .not("movie_id", "is", null);
 
-      if (showtimeError) throw new Error(showtimeError.message);
+      if (cinemaError) throw new Error(cinemaError.message);
 
-      // Aggregate di application layer: ambil MAX(show_date) per movie_id
-      const maxShowDateMap = new Map<number, string>();
-      for (const row of showtimeAgg ?? []) {
-        const existing = maxShowDateMap.get(row.movie_id);
-        if (!existing || row.show_date > existing) {
-          maxShowDateMap.set(row.movie_id, row.show_date);
+      // Deduplicate movie_id (beda chain: XXI/CGV/Cinepolis)
+      const nowPlayingIds = [
+        ...new Set((cinemaRows ?? []).map((r: any) => r.movie_id)),
+      ];
+
+      if (nowPlayingIds.length > 0) {
+        // Fetch release_date dari movies
+        const { data: movieRows, error: movieError } = await supabase
+          .from("movies")
+          .select("id, release_date")
+          .in("id", nowPlayingIds)
+          .not("release_date", "is", null)
+          .lte("release_date", todayStr); // hanya yang sudah rilis
+
+        if (movieError) throw new Error(movieError.message);
+
+        // Hitung estimasi last_show_date = release_date + MIN_RUN_DAYS
+        // Filter yang masuk window threshold
+        for (const m of movieRows ?? []) {
+          const releaseDate = new Date(m.release_date);
+          const estimatedLastDay = new Date(releaseDate);
+          estimatedLastDay.setDate(estimatedLastDay.getDate() + MIN_RUN_DAYS);
+          const estimatedLastDayStr = estimatedLastDay
+            .toISOString()
+            .slice(0, 10);
+
+          if (
+            estimatedLastDayStr >= todayStr &&
+            estimatedLastDayStr <= thresholdStr
+          ) {
+            movies.push({
+              movie_id: m.id,
+              last_show_date: estimatedLastDayStr,
+            });
+          }
         }
       }
-
-      // Convert ke format yang sama dengan RPC result
-      const derived = Array.from(maxShowDateMap.entries()).map(
-        ([movie_id, last_show_date]) => ({
-          movie_id,
-          last_show_date,
-        }),
-      );
-
-      await processLeavingSoonCinema(
-        derived,
-        supabase,
-        dryRun,
-        todayStr,
-        stats,
-      );
-    } else {
-      await processLeavingSoonCinema(
-        leavingSoonMovies ?? [],
-        supabase,
-        dryRun,
-        todayStr,
-        stats,
-      );
     }
 
-    // ── 4. Cleanup cinema rows yang filmnya sudah tidak tayang ──────────────
-    stats.removed_stale = await cleanupStaleCinema(supabase, todayStr, dryRun);
+    // Deduplicate sekali lagi di sini untuk safety
+    // (RPC harusnya sudah unik per movie_id, tapi jaga-jaga)
+    const uniqueMovieMap = new Map<number, string>();
+    for (const m of movies) {
+      const existing = uniqueMovieMap.get(m.movie_id);
+      if (!existing || m.last_show_date > existing) {
+        uniqueMovieMap.set(m.movie_id, m.last_show_date);
+      }
+    }
+    const uniqueMovies = Array.from(uniqueMovieMap.entries()).map(
+      ([movie_id, last_show_date]) => ({ movie_id, last_show_date }),
+    );
+
+    stats.leaving_soon_found = uniqueMovies.length;
+    console.log(`[cinema] ${uniqueMovies.length} unique movies leaving soon`);
+
+    // ── Upsert ke leaving_soon ─────────────────────────────────────────────
+    if (uniqueMovies.length > 0 && !dryRun) {
+      const movieIds = uniqueMovies.map((m) => m.movie_id);
+
+      // Delete existing cinema rows untuk movie_id yang akan di-insert
+      // (menghindari duplikat karena partial index tidak support onConflict di Supabase JS)
+      const { error: deleteError } = await supabase
+        .from("leaving_soon")
+        .delete()
+        .eq("platform_slug", PLATFORM_SLUG)
+        .eq("region", DB_REGION)
+        .eq("content_type", "movie")
+        .in("movie_id", movieIds);
+
+      if (deleteError) {
+        console.error(
+          `[cinema] delete before insert error:`,
+          deleteError.message,
+        );
+      }
+
+      const rows = uniqueMovies.map((m) => ({
+        content_type: "movie",
+        movie_id: m.movie_id,
+        tv_series_id: null,
+        platform_slug: PLATFORM_SLUG,
+        region: DB_REGION,
+        available_until: m.last_show_date,
+        announced_at: new Date().toISOString(),
+        source: "cinema_showtimes",
+      }));
+
+      for (let i = 0; i < rows.length; i += 50) {
+        const batch = rows.slice(i, i + 50);
+        const { error } = await supabase.from("leaving_soon").insert(batch);
+
+        if (error) {
+          console.error(`[cinema] insert batch error:`, error.message);
+          stats.errors += batch.length;
+        } else {
+          stats.upserted += batch.length;
+        }
+      }
+    } else if (dryRun) {
+      console.log(`[cinema] [DRY] Would upsert ${uniqueMovies.length} rows`);
+      stats.upserted = uniqueMovies.length;
+    }
+
+    // ── Cleanup: hapus cinema rows yang expired ────────────────────────────
+    if (!dryRun) {
+      const { count, error } = await supabase
+        .from("leaving_soon")
+        .delete({ count: "exact" })
+        .eq("source", "cinema_showtimes")
+        .lt("available_until", todayStr);
+
+      if (error) console.error("[cleanup] cinema error:", error.message);
+      else {
+        stats.removed_stale = count ?? 0;
+        console.log(`[cleanup] Deleted ${count ?? 0} stale cinema rows`);
+      }
+    }
 
     await supabase.from("sync_logs").upsert({
       id: logId,
@@ -151,87 +221,6 @@ serve(async (req) => {
     });
     return new Response(JSON.stringify({ error: err.message }), {
       status: 500,
-      headers: { "Content-Type": "application/json" },
     });
   }
 });
-
-// ─── HELPERS ──────────────────────────────────────────────────────────────────
-
-async function processLeavingSoonCinema(
-  movies: { movie_id: number; last_show_date: string }[],
-  supabase: any,
-  dryRun: boolean,
-  todayStr: string,
-  stats: { leaving_soon_found: number; upserted: number; errors: number },
-) {
-  stats.leaving_soon_found = movies.length;
-  console.log(`[cinema] ${movies.length} movies leaving soon in cinema`);
-
-  if (movies.length === 0) return;
-
-  const rows = movies.map((m) => ({
-    content_type: "movie",
-    movie_id: m.movie_id,
-    tv_series_id: null,
-    platform_slug: PLATFORM_SLUG,
-    region: DB_REGION,
-    available_until: m.last_show_date,
-    announced_at: new Date().toISOString(),
-    source: "cinema_showtimes",
-  }));
-
-  if (dryRun) {
-    console.log(`[cinema] [DRY] Would upsert ${rows.length} cinema rows`);
-    stats.upserted = rows.length;
-    return;
-  }
-
-  // Upsert dalam batch 50
-  for (let i = 0; i < rows.length; i += 50) {
-    const batch = rows.slice(i, i + 50);
-    const { error } = await supabase.from("leaving_soon").upsert(batch, {
-      onConflict: "content_type,movie_id,tv_series_id,platform_slug,region",
-      ignoreDuplicates: false,
-    });
-
-    if (error) {
-      console.error(`[cinema] upsert batch error:`, error.message);
-      stats.errors += batch.length;
-    } else {
-      stats.upserted += batch.length;
-      console.log(`[cinema] Upserted ${batch.length} rows`);
-    }
-  }
-}
-
-async function cleanupStaleCinema(
-  supabase: any,
-  todayStr: string,
-  dryRun: boolean,
-): Promise<number> {
-  // Hapus baris cinema yang available_until sudah lewat hari ini
-  if (dryRun) {
-    const { count } = await supabase
-      .from("leaving_soon")
-      .select("id", { count: "exact", head: true })
-      .eq("source", "cinema_showtimes")
-      .lt("available_until", todayStr);
-    console.log(`[cleanup] [DRY] Would delete ${count ?? 0} stale cinema rows`);
-    return count ?? 0;
-  }
-
-  const { count, error } = await supabase
-    .from("leaving_soon")
-    .delete({ count: "exact" })
-    .eq("source", "cinema_showtimes")
-    .lt("available_until", todayStr);
-
-  if (error) {
-    console.error("[cleanup] cinema stale error:", error.message);
-    return 0;
-  }
-
-  console.log(`[cleanup] Deleted ${count ?? 0} stale cinema rows`);
-  return count ?? 0;
-}
