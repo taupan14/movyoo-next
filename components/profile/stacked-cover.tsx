@@ -11,7 +11,7 @@ const STACK_TRANSFORMS = [
 ];
 
 interface Props {
-  items: { poster_path: string | null; title: string }[];
+  items: { poster_path?: string | null | undefined; title?: string }[];
   isAchievement?: boolean;
 }
 

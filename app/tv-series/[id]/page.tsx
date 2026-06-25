@@ -8,6 +8,7 @@ import { SectionHeader } from "@/components/section-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import type { TranslationKey } from "@/lib/i18n";
 import SeasonTabs from "./season-tabs";
 import { cn } from "@/lib/utils";
 import {
@@ -94,7 +95,7 @@ interface Platform {
   } | null;
 }
 
-interface TvSeason {
+export interface TvSeason {
   season_number: number;
   name: string;
   overview: string | null;
@@ -104,7 +105,7 @@ interface TvSeason {
   episodes?: TvEpisode[];
 }
 
-interface TvEpisode {
+export interface TvEpisode {
   episode_number: number;
   name: string;
   overview: string | null;
@@ -352,7 +353,7 @@ function TvQuickDecisionCard({
 }: {
   seriesId: number;
   locale: string;
-  t: (k: string) => string;
+  t: (key: TranslationKey) => string;
 }) {
   const [voteCounts, setVoteCounts] = useState<TvVoteCounts>({
     worth_it: { yes: 0, skip: 0, fan: 0, total: 0 },

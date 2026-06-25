@@ -103,6 +103,7 @@ export interface UpcomingMovie {
   popularity: number;
   overview: string | null;
   trailer_key: string | null;
+  genres: { id: any; name: any; slug: any; tmdb_genre_id: any }[];
 }
 
 export interface MovieCrewItem {

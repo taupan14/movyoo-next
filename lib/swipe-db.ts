@@ -417,7 +417,13 @@ async function updatePreferences(params: {
     .eq("user_id", userId)
     .single();
 
-  const current = prefRow ?? {};
+  // const current = prefRow ?? {};
+  const current = (prefRow ?? {}) as {
+    genre_scores?: Record<string, number>;
+    cast_scores?: Record<string, number>;
+    language_scores?: Record<string, number>;
+    total_swipes?: number;
+  };
 
   await client.from("user_preferences").upsert(
     {

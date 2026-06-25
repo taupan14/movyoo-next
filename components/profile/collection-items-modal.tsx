@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 
 const TMDB_BASE = "https://image.tmdb.org/t/p/w185";
 
-interface CollectionItem {
+export interface CollectionItem {
   item_id: number;
   media_type: "movie" | "tv";
   movie_id: number | null;
@@ -101,7 +101,7 @@ export function CollectionItemsModal({
         className={cn(
           "w-full max-w-lg bg-[#13131a] border border-white/[0.08] rounded-t-2xl",
           "flex flex-col max-h-[75dvh]",
-          "transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]",
+          "transition-transform duration-300 ease-out-expo",
           open ? "translate-y-0" : "translate-y-full",
         )}
       >

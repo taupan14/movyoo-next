@@ -22,7 +22,9 @@ export function startLoader() {
 
 function subscribeLoader(fn: Listener) {
   listeners.add(fn);
-  return () => listeners.delete(fn);
+  return () => {
+    listeners.delete(fn);
+  };
 }
 
 // ─── Visual Component ─────────────────────────────────────────────────────────

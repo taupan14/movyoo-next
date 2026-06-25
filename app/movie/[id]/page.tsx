@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useI18n } from "@/hooks/use-locale";
+import type { TranslationKey } from "@/lib/i18n";
 import { getPosterUrl, getBackdropUrl, getProfileUrl } from "@/lib/tmdb";
 import { MovieCard } from "@/components/movie-card";
 import { SectionHeader } from "@/components/section-header";
@@ -539,7 +540,7 @@ function QuickDecisionCard({
 }: {
   movieId: number;
   locale: string;
-  t: (k: string) => string;
+  t: (k: TranslationKey) => string;
 }) {
   const [voteCounts, setVoteCounts] = useState<VoteCounts>({
     worth_it: { yes: 0, skip: 0, fan: 0, total: 0 },

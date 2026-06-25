@@ -42,6 +42,7 @@ import { motion } from "framer-motion";
 // page.tsx
 import { CollectionStackedCover } from "@/components/profile/stacked-cover";
 import { CollectionItemsModal } from "@/components/profile/collection-items-modal";
+import type { CollectionItem } from "@/components/profile/collection-items-modal";
 
 // Inline helper — lib/tmdb.ts akan dihapus kedepannya
 const TMDB_IMG_BASE = "https://image.tmdb.org/t/p";

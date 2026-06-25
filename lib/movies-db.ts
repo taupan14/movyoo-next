@@ -115,13 +115,14 @@ async function fetchCategoryNowPlaying(
   lang: string,
   region: string,
   limit = 20,
+  date?: string,
 ): Promise<CachedMovie[]> {
-  const today = new Date().toISOString().split("T")[0]; // pakai helper WIB yang sudah ada, atau new Date().toISOString().split('T')[0]
+  // const today = new Date().toISOString().split("T")[0]; // pakai helper WIB yang sudah ada, atau new Date().toISOString().split('T')[0]
   // console.log(`[movies-db] fetchCategory(now_playing): ${today}`);
 
   const { data, error } = await supabase.rpc("get_latest_movies_21cineplex", {
     p_limit: limit,
-    p_date: today, // ← kirim tanggal hari ini
+    p_date: date, // ← kirim tanggal hari ini
   });
   // hapus .order() — sudah dihandle di SQL
 

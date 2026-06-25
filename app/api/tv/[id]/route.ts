@@ -30,7 +30,7 @@ export async function GET(
 
   try {
     // 1. Main series data
-    const { data: seriesRow, error: seriesErr } = await supabase
+    const { data: rows, error: seriesErr } = await supabase
       .from("tv_series")
       .select(
         "id, tmdb_id, name, original_name, overview, overview_en, tagline, " +
@@ -41,9 +41,35 @@ export async function GET(
       .eq("tmdb_id", tmdbId)
       .single();
 
-    if (seriesErr || !seriesRow) {
+    if (seriesErr || !rows) {
       return NextResponse.json({ error: "Series not found" }, { status: 404 });
     }
+
+    // Cast sekali di sini, pakai `series` untuk semua akses di bawah
+    const seriesRow = rows as unknown as {
+      id: number;
+      tmdb_id: number;
+      name: string;
+      original_name: string;
+      overview: string | null;
+      overview_en: string | null;
+      tagline: string;
+      poster_path: string | null;
+      backdrop_path: string | null;
+      vote_average: number | null;
+      vote_count: number | null;
+      popularity: number | null;
+      status: string | null;
+      type: string | null;
+      original_language: string | null;
+      first_air_date: string | null;
+      last_air_date: string | null;
+      number_of_seasons: number | null;
+      number_of_episodes: number | null;
+      episode_run_time: number[] | null;
+      in_production: boolean | null;
+      trailer_key: string | null;
+    };
 
     const seriesId = seriesRow.id;
 

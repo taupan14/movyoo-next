@@ -215,9 +215,9 @@ export function Navigation() {
               />
             </div>
             <span
-              className={`${poppins.className} font-bold text-white text-lg tracking-wider`}
+              className={`${poppins.className} font-bold text-white text-xl tracking-wider`}
             >
-              Movyoo<span className="text-primary text-2xl">.</span>
+              Movyoo<span className="text-primary text-2xl ml-0.5">.</span>
             </span>
           </Link>
 

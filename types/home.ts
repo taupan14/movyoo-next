@@ -13,6 +13,7 @@ export interface Movie {
   overview_id?: string;
   overview_alt?: string;
   tmdb_id?: number;
+  genres?: string[];
 }
 
 export interface TvSeries {
@@ -46,6 +47,7 @@ export interface HomeData {
   trending: Movie[];
   nowPlaying: Movie[];
   upcoming: Movie[];
+  bestSeller: Movie[];
   popular: Movie[];
   indonesianMovies: Movie[];
   indonesianPopularMovies: Movie[];

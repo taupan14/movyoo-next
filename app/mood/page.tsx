@@ -39,6 +39,7 @@ interface Movie {
   release_date?: string | null;
   overview?: string;
   popularity?: number;
+  genres?: string[];
 }
 
 type MoodKey = "ketawa" | "tegang" | "nangis" | "santai" | "mikir" | "berat";

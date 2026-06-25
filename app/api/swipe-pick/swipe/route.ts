@@ -185,7 +185,7 @@ export async function POST(req: NextRequest) {
         genre_ids: mediaCtx?.genre_ids ?? [],
         vote_avg: mediaCtx?.vote_avg ?? 0,
         vote_count: mediaCtx?.vote_count ?? 0,
-        release_year: mediaCtx?.release_year ?? null,
+        release_year: mediaCtx?.release_year ?? undefined,
       };
 
       const refId = mediaType === "movie" ? Number(movieId) : Number(seriesId);

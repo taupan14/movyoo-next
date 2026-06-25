@@ -595,7 +595,8 @@ function ExploreCard({
           )}
           {isTv ? (
             <span className="text-xs text-muted-foreground">
-              {numberOfSeasons} {numberOfSeasons > 1 ? "Seasons" : "Season"}
+              {numberOfSeasons}{" "}
+              {(numberOfSeasons ?? 0) > 1 ? "Seasons" : "Season"}
             </span>
           ) : firstGenre ? (
             <span className="text-xs text-muted-foreground">
@@ -3048,7 +3049,7 @@ function ExploreContent() {
             return (
               <button
                 key={item.key}
-                onClick={() => switchTab(item.key)}
+                onClick={() => switchTab(item.key as ContentTab)}
                 className="relative px-5 py-2 rounded-lg min-w-[120px]"
               >
                 {tab === item.key && (

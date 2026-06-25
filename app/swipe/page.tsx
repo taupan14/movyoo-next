@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useI18n } from "@/hooks/use-locale";
 import { useAuth } from "@/hooks/use-auth";
 import { getPosterUrl } from "@/lib/tmdb";
+import type { TranslationKey } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 import {
@@ -390,7 +391,7 @@ function SwipeCard({
   onTouchMove: (e: React.TouchEvent) => void;
   onTouchEnd: () => void;
   locale: string;
-  t: (key: string) => string;
+  t: (key: TranslationKey) => string;
 }) {
   // console.log("<<< Swipe >>>", item);
   const bucket = BUCKET_CONFIG[item.bucket] ?? BUCKET_CONFIG["trending"];

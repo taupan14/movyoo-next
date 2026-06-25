@@ -534,6 +534,7 @@ export async function fetchOscarContenders(
     trailer_url: null,
     sort_order: 0,
     section: row.festival_sections ?? null,
+    is_winner: row.is_winner ?? false,
     movie: row.movies ?? null,
   }));
 }
