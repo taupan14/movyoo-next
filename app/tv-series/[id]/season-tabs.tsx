@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Calendar, Film, Clock, ChevronDown, ChevronUp } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { TvSeason, TvEpisode } from "./page";
+import type { TvSeason, TvEpisode } from "./tv-detail";
 
 interface SeasonTabsProps {
   seasons: TvSeason[];
