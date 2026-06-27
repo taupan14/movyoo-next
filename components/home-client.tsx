@@ -40,6 +40,7 @@ import { FilmFestivalSection } from "./home/festival-section";
 import { HiddenGemsSection } from "./hidden-gems-section";
 import { AICuratorSection, type PosterMap } from "./ai-curator-section";
 
+import NativeBannerAd from "@/components/ads/NativeBannerAd";
 // ─── Main HomeClient Component ────────────────────────────────────────────────
 
 export function HomeClient() {
@@ -528,6 +529,8 @@ export function HomeClient() {
 
         {/* ── Segera Tayang ──────────────────────────────────────────────────── */}
         <MovieRow title={t("coming_soon")} movies={upcoming} />
+
+        <NativeBannerAd className="px-4" />
 
         {/* ── Trending TV Series ─────────────────────────────────────────────── */}
         <TrendingSeriesRow

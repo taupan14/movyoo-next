@@ -4,6 +4,9 @@ import { Inter } from "next/font/google";
 import { Providers } from "./providers";
 import { PageLoader } from "@/components/page-loader";
 import { Suspense } from "react";
+import { Footer } from "@/components/footer";
+import PopunderAd from "@/components/ads/PopunderAd";
+import SocialBarAd from "@/components/ads/SocialBarAd";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -16,7 +19,7 @@ export const metadata: Metadata = {
     template: "%s | Movyoo",
   },
   description:
-    "Movyoo membantu kamu menemukan film dan series terbaik. Rekomendasi berdasarkan mood, jadwal bioskop, film trending, dan more.",
+    "Movyoo membantu kamu menemukan film dan series terbaik. Rekomendasi berdasarkan mood, jadwal bioskop, film trending, dan lainnya.",
   keywords: [
     "film",
     "movie",
@@ -48,7 +51,7 @@ export const metadata: Metadata = {
     siteName: "Movyoo",
     title: "Movyoo — Temukan Film Terbaik untuk Ditonton",
     description:
-      "Movyoo membantu kamu menemukan film dan series terbaik. Rekomendasi berdasarkan mood, jadwal bioskop, film trending, dan more.",
+      "Movyoo membantu kamu menemukan film dan series terbaik. Rekomendasi berdasarkan mood, jadwal bioskop, film trending, dan lainnya.",
     images: [
       {
         url: "/og-image.jpg", // ← buat file ini di /public (1200x630px)
@@ -62,7 +65,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "Movyoo — Temukan Film Terbaik untuk Ditonton",
     description:
-      "Movyoo membantu kamu menemukan film dan series terbaik. Rekomendasi berdasarkan mood, jadwal bioskop, film trending, dan more.",
+      "Movyoo membantu kamu menemukan film dan series terbaik. Rekomendasi berdasarkan mood, jadwal bioskop, film trending, dan lainnya.",
     images: ["/og-image.jpg"],
   },
   alternates: {
@@ -83,6 +86,20 @@ export default function RootLayout({
           <Suspense>
             <PageLoader />
           </Suspense>
+
+          {/*
+           * === AD PLACEMENT ===
+           *
+           * PopunderAd  — inject 1x ke <head>, tidak render visual apapun.
+           *               Popunder muncul di tab/window baru saat user klik pertama.
+           *
+           * SocialBarAd — floating bar di tepi layar (posisi diatur Adsterra).
+           *               Letakkan di luar semua konten agar tidak mempengaruhi layout.
+           */}
+          <PopunderAd />
+          <SocialBarAd />
+
+          <Footer />
         </Providers>
       </body>
     </html>

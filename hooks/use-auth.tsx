@@ -108,17 +108,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
   const migrated = useRef(false);
 
+  const SITE_URL =
+    process.env.NEXT_PUBLIC_SITE_URL ??
+    (typeof window !== "undefined" ? window.location.origin : "");
+
   // Fetch profile dari Supabase
   const fetchProfile = useCallback(
     async (supabaseUser: User): Promise<Profile | null> => {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", supabaseUser.id)
-        .single();
+      // Retry sampai 3x dengan jeda, untuk handle race condition
+      // antara auth callback dan trigger insert profile
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", supabaseUser.id)
+          .maybeSingle();
 
-      if (error) return null;
-      return data as Profile;
+        if (error) {
+          console.error("[auth] fetchProfile error:", error);
+          return null;
+        }
+
+        if (data) return data as Profile;
+
+        // Profile belum ada, tunggu sebentar lalu retry
+        if (attempt < 2) {
+          await new Promise((res) => setTimeout(res, 1000 * (attempt + 1)));
+        }
+      }
+
+      return null;
     },
     [],
   );
@@ -161,6 +180,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const authUser = await buildAuthUser(s.user);
         setUser(authUser);
 
+        // Kalau profile masih null setelah buildAuthUser (race condition),
+        // schedule refresh sekali lagi setelah 2 detik
+        if (!authUser.profile && event === "SIGNED_IN") {
+          setTimeout(async () => {
+            const profile = await fetchProfile(s.user);
+            if (profile) {
+              setUser((prev) => (prev ? { ...prev, profile } : null));
+            }
+          }, 2000);
+        }
+
         if (event === "SIGNED_IN" && !migrated.current) {
           migrated.current = true;
           migrateLocalWatchlist(s.user.id);
@@ -169,6 +199,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(null);
         migrated.current = false;
       }
+
       setLoading(false);
     });
 
@@ -181,7 +212,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
+        redirectTo: `${SITE_URL}/auth/callback`,
         queryParams: { access_type: "offline", prompt: "consent" },
       },
     });
@@ -190,7 +221,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signInWithGitHub = useCallback(async () => {
     await supabase.auth.signInWithOAuth({
       provider: "github",
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
+      options: { redirectTo: `${SITE_URL}/auth/callback` },
     });
   }, []);
 
@@ -207,12 +238,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signUpWithEmail = useCallback(
     async (email: string, password: string, name: string) => {
+      // Cek duplikat email dulu
+      const check = await fetch("/api/auth/check-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      const { exists } = await check.json();
+      if (exists) {
+        return {
+          error: "Email sudah terdaftar. Coba masuk atau gunakan email lain.",
+        };
+      }
+
       const { error } = await supabase.auth.signUp({
         email,
         password,
         options: {
           data: { full_name: name },
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
+          emailRedirectTo: `${SITE_URL}/auth/callback`,
         },
       });
       return { error: error?.message ?? null };
@@ -223,17 +267,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signInWithMagicLink = useCallback(async (email: string) => {
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
+      options: {
+        emailRedirectTo: `${SITE_URL}/auth/callback`,
+      },
     });
     return { error: error?.message ?? null };
   }, []);
 
   const signOut = useCallback(async () => {
-    await supabase.auth.signOut();
-    // Clear state setelah Supabase selesai sign out
+    await Promise.race([
+      fetch("/api/auth/signout", { method: "POST" }),
+      new Promise((res) => setTimeout(res, 3000)),
+    ]).catch(() => {});
+
     setUser(null);
     setSession(null);
-    // Hapus semua cookie session yang mungkin tersisa
+
     if (typeof window !== "undefined") {
       window.location.href = "/";
     }

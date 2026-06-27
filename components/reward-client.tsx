@@ -30,6 +30,8 @@ import {
   formatHypeScore,
 } from "@/types/reward";
 
+import NativeBannerAd from "@/components/ads/NativeBannerAd";
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function formatPoints(n: number) {
@@ -1136,6 +1138,8 @@ export function RewardClient() {
           result={redeemResult}
         />
       )}
+
+      <NativeBannerAd className="px-4" />
     </div>
   );
 }

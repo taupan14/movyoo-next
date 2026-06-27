@@ -44,6 +44,8 @@ import { CollectionStackedCover } from "@/components/profile/stacked-cover";
 import { CollectionItemsModal } from "@/components/profile/collection-items-modal";
 import type { CollectionItem } from "@/components/profile/collection-items-modal";
 
+import NativeBannerAd from "@/components/ads/NativeBannerAd";
+
 // Inline helper — lib/tmdb.ts akan dihapus kedepannya
 const TMDB_IMG_BASE = "https://image.tmdb.org/t/p";
 function getPosterUrl(path: string | null, size = "w500"): string {
@@ -825,7 +827,15 @@ export default function ProfilePage() {
   const handleSignOut = async () => {
     if (loggingOut) return;
     setLoggingOut(true);
-    await signOut();
+    try {
+      await signOut();
+      // signOut() sudah handle redirect ke "/", jadi tidak perlu apa-apa di sini
+    } catch (err) {
+      console.error("[profile] Sign out failed:", err);
+      setLoggingOut(false);
+      setShowLogoutConfirm(false);
+      showToast("Gagal keluar. Coba lagi.", "error");
+    }
   };
 
   const removeFromWatchlist = async (id: number) => {
@@ -1506,6 +1516,7 @@ export default function ProfilePage() {
           </>
         )}
       </div>
+      <NativeBannerAd className="px-4" />
     </div>
   );
 }

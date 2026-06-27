@@ -56,6 +56,8 @@ import {
 } from "@/components/ui/tooltip";
 import { supabase } from "@/lib/supabase";
 
+import NativeBannerAd from "@/components/ads/NativeBannerAd";
+
 /* ------------------------------------------------------------------ */
 /*  Types                                                             */
 /* ------------------------------------------------------------------ */
@@ -1934,6 +1936,8 @@ export default function MovieDetailClient() {
             </div>
           </div>
         </section>
+
+        <NativeBannerAd className="px-4" />
 
         {/* ============================================================ */}
         {/*  6. TRAILER                                                    */}

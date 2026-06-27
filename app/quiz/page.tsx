@@ -45,6 +45,8 @@ import type {
   TriviaCategory,
 } from "@/types/trivia";
 
+import NativeBannerAd from "@/components/ads/NativeBannerAd";
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 const TIME_PER_QUESTION = 15; // detik
 const AUTO_NEXT_DELAY = 2000; // ms sebelum otomatis lanjut ke soal berikutnya
@@ -498,223 +500,232 @@ export default function QuizPage() {
   // ── Phase: Lobby ──────────────────────────────────────────────────────────
   if (phase === "lobby") {
     return (
-      <div className="min-h-screen max-w-lg mx-auto px-4 py-8 pb-28 lg:pb-8">
-        {/* Header */}
-        <div className="mb-8">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center">
-              <Flame className="w-5 h-5 text-amber-400" />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold">Trivia Film</h1>
-              <p className="text-xs text-muted-foreground">
-                Uji pengetahuan sinema kamu
-              </p>
+      <>
+        <div className="max-w-lg mx-auto px-4 py-8 pb-28 lg:pb-8">
+          {/* Header */}
+          <div className="mb-8">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center">
+                <Flame className="w-5 h-5 text-amber-400" />
+              </div>
+              <div>
+                <h1 className="text-xl font-bold">Trivia Film</h1>
+                <p className="text-xs text-muted-foreground">
+                  Uji pengetahuan sinema kamu
+                </p>
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Daily trivia card */}
-        {dailyStatus && (
-          <div
-            className={cn(
-              "p-4 rounded-2xl border mb-6",
-              dailyStatus.completed
-                ? "bg-emerald-500/10 border-emerald-500/20"
-                : "bg-primary/5 border-primary/20",
-            )}
-          >
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                <Calendar className="w-4 h-4 text-primary" />
-                <span className="text-sm font-semibold">Daily Trivia</span>
-              </div>
-              {dailyStatus.completed && (
-                <span className="flex items-center gap-1 text-xs text-emerald-400 font-medium">
-                  <CheckCircle2 className="w-3.5 h-3.5" /> Selesai
-                </span>
+          {/* Daily trivia card */}
+          {dailyStatus && (
+            <div
+              className={cn(
+                "p-4 rounded-2xl border mb-6",
+                dailyStatus.completed
+                  ? "bg-emerald-500/10 border-emerald-500/20"
+                  : "bg-primary/5 border-primary/20",
               )}
-            </div>
-            {dailyStatus.completed ? (
-              <div className="flex items-center gap-4 text-sm">
-                <span className="text-muted-foreground">
-                  {dailyStatus.correct_count}/{dailyStatus.total_questions}{" "}
-                  benar
-                </span>
-                <span className="text-amber-400 font-medium">
-                  +{dailyStatus.xp_earned} XP
-                </span>
-                <span className="text-emerald-400 font-medium">
-                  +{dailyStatus.pts_earned} Pts
-                </span>
-                {(dailyStatus.tickets_earned ?? 0) > 0 && (
-                  <span className="text-violet-400 font-medium flex items-center gap-1">
-                    <Ticket className="w-3 h-3" />+{dailyStatus.tickets_earned}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-primary" />
+                  <span className="text-sm font-semibold">Daily Trivia</span>
+                </div>
+                {dailyStatus.completed && (
+                  <span className="flex items-center gap-1 text-xs text-emerald-400 font-medium">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Selesai
                   </span>
                 )}
               </div>
-            ) : (
-              <div className="flex items-center justify-between">
-                <p className="text-xs text-muted-foreground">
-                  +30 XP bonus jika selesai hari ini
-                </p>
-                <button
-                  onClick={() => {
-                    setMode("daily");
-                    setTimeout(startSession, 0);
-                  }}
-                  className="text-xs font-medium text-primary hover:underline flex items-center gap-1"
-                >
-                  Mulai <ChevronRight className="w-3 h-3" />
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Error */}
-        {error && (
-          <div className="mb-4 px-4 py-3 rounded-xl bg-destructive/10 border border-destructive/20 text-sm text-destructive">
-            {error}
-          </div>
-        )}
-
-        {/* Config */}
-        <div className="space-y-4">
-          {/* Mode */}
-          <div>
-            <label className="text-xs font-medium text-muted-foreground mb-2 block">
-              Mode
-            </label>
-            <div className="grid grid-cols-3 gap-2">
-              {(["practice", "category", "daily"] as TriviaMode[]).map((m) => (
-                <button
-                  key={m}
-                  onClick={() => setMode(m)}
-                  className={cn(
-                    "py-2.5 rounded-xl border text-sm font-medium transition-all",
-                    mode === m
-                      ? "border-primary bg-primary/10 text-primary"
-                      : "border-white/10 bg-white/[0.03] text-muted-foreground hover:border-white/20",
+              {dailyStatus.completed ? (
+                <div className="flex items-center gap-4 text-sm">
+                  <span className="text-muted-foreground">
+                    {dailyStatus.correct_count}/{dailyStatus.total_questions}{" "}
+                    benar
+                  </span>
+                  <span className="text-amber-400 font-medium">
+                    +{dailyStatus.xp_earned} XP
+                  </span>
+                  <span className="text-emerald-400 font-medium">
+                    +{dailyStatus.pts_earned} Pts
+                  </span>
+                  {(dailyStatus.tickets_earned ?? 0) > 0 && (
+                    <span className="text-violet-400 font-medium flex items-center gap-1">
+                      <Ticket className="w-3 h-3" />+
+                      {dailyStatus.tickets_earned}
+                    </span>
                   )}
-                >
-                  {m === "practice"
-                    ? "Latihan"
-                    : m === "category"
-                      ? "Kategori"
-                      : "Daily"}
-                </button>
-              ))}
+                </div>
+              ) : (
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-muted-foreground">
+                    +30 XP bonus jika selesai hari ini
+                  </p>
+                  <button
+                    onClick={() => {
+                      setMode("daily");
+                      setTimeout(startSession, 0);
+                    }}
+                    className="text-xs font-medium text-primary hover:underline flex items-center gap-1"
+                  >
+                    Mulai <ChevronRight className="w-3 h-3" />
+                  </button>
+                </div>
+              )}
             </div>
-          </div>
+          )}
 
-          {/* Difficulty */}
-          <div>
-            <label className="text-xs font-medium text-muted-foreground mb-2 block">
-              Tingkat Kesulitan
-            </label>
-            <div className="grid grid-cols-4 gap-2">
-              <button
-                onClick={() => setDiff("")}
-                className={cn(
-                  "py-2.5 rounded-xl border text-sm font-medium transition-all",
-                  difficulty === ""
-                    ? "border-primary bg-primary/10 text-primary"
-                    : "border-white/10 bg-white/[0.03] text-muted-foreground",
+          {/* Error */}
+          {error && (
+            <div className="mb-4 px-4 py-3 rounded-xl bg-destructive/10 border border-destructive/20 text-sm text-destructive">
+              {error}
+            </div>
+          )}
+
+          {/* Config */}
+          <div className="space-y-4">
+            {/* Mode */}
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-2 block">
+                Mode
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                {(["practice", "category", "daily"] as TriviaMode[]).map(
+                  (m) => (
+                    <button
+                      key={m}
+                      onClick={() => setMode(m)}
+                      className={cn(
+                        "py-2.5 rounded-xl border text-sm font-medium transition-all",
+                        mode === m
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-white/10 bg-white/[0.03] text-muted-foreground hover:border-white/20",
+                      )}
+                    >
+                      {m === "practice"
+                        ? "Latihan"
+                        : m === "category"
+                          ? "Kategori"
+                          : "Daily"}
+                    </button>
+                  ),
                 )}
-              >
-                Semua
-              </button>
-              {(["easy", "medium", "hard"] as TriviaDifficulty[]).map((d) => (
+              </div>
+            </div>
+
+            {/* Difficulty */}
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-2 block">
+                Tingkat Kesulitan
+              </label>
+              <div className="grid grid-cols-4 gap-2">
                 <button
-                  key={d}
-                  onClick={() => setDiff(d)}
+                  onClick={() => setDiff("")}
                   className={cn(
                     "py-2.5 rounded-xl border text-sm font-medium transition-all",
-                    difficulty === d
-                      ? DIFFICULTY_COLORS[d] + " border-current"
+                    difficulty === ""
+                      ? "border-primary bg-primary/10 text-primary"
                       : "border-white/10 bg-white/[0.03] text-muted-foreground",
                   )}
                 >
-                  {DIFFICULTY_LABELS[d]}
+                  Semua
                 </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Category (hanya jika mode = category) */}
-          {mode === "category" && (
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-2 block">
-                Kategori
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                {(
-                  Object.entries(CATEGORY_LABELS) as [TriviaCategory, string][]
-                ).map(([k, v]) => (
+                {(["easy", "medium", "hard"] as TriviaDifficulty[]).map((d) => (
                   <button
-                    key={k}
-                    onClick={() => setCategory(k)}
+                    key={d}
+                    onClick={() => setDiff(d)}
                     className={cn(
-                      "py-2 rounded-xl border text-sm transition-all text-left px-3",
-                      category === k
-                        ? "border-primary bg-primary/10 text-primary"
+                      "py-2.5 rounded-xl border text-sm font-medium transition-all",
+                      difficulty === d
+                        ? DIFFICULTY_COLORS[d] + " border-current"
                         : "border-white/10 bg-white/[0.03] text-muted-foreground",
                     )}
                   >
-                    {v}
+                    {DIFFICULTY_LABELS[d]}
                   </button>
                 ))}
               </div>
             </div>
-          )}
 
-          {/* Count */}
-          <div>
-            <label className="text-xs font-medium text-muted-foreground mb-2 block">
-              Jumlah Soal:{" "}
-              <span className="text-foreground font-bold">{count}</span>
-            </label>
-            <input
-              type="range"
-              min={10}
-              max={25}
-              step={5}
-              value={count}
-              onChange={(e) => setCount(Number(e.target.value))}
-              className="w-full accent-primary"
-            />
-            <div className="flex justify-between text-xs text-muted-foreground mt-1">
-              <span>10</span>
-              <span>15</span>
-              <span>20</span>
-              <span>25</span>
+            {/* Category (hanya jika mode = category) */}
+            {mode === "category" && (
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-2 block">
+                  Kategori
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {(
+                    Object.entries(CATEGORY_LABELS) as [
+                      TriviaCategory,
+                      string,
+                    ][]
+                  ).map(([k, v]) => (
+                    <button
+                      key={k}
+                      onClick={() => setCategory(k)}
+                      className={cn(
+                        "py-2 rounded-xl border text-sm transition-all text-left px-3",
+                        category === k
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-white/10 bg-white/[0.03] text-muted-foreground",
+                      )}
+                    >
+                      {v}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Count */}
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-2 block">
+                Jumlah Soal:{" "}
+                <span className="text-foreground font-bold">{count}</span>
+              </label>
+              <input
+                type="range"
+                min={10}
+                max={25}
+                step={5}
+                value={count}
+                onChange={(e) => setCount(Number(e.target.value))}
+                className="w-full accent-primary"
+              />
+              <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                <span>10</span>
+                <span>15</span>
+                <span>20</span>
+                <span>25</span>
+              </div>
             </div>
           </div>
+
+          {/* Start button */}
+          <button
+            onClick={startSession}
+            disabled={loading}
+            className="w-full mt-8 py-4 rounded-2xl gradient-primary text-white font-bold text-base hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {loading ? (
+              <Loader2 className="w-5 h-5 animate-spin" />
+            ) : (
+              <Flame className="w-5 h-5" />
+            )}
+            Mulai Trivia
+          </button>
+
+          {/* Leaderboard link */}
+          <button
+            onClick={loadLeaderboard}
+            className="w-full mt-3 py-3 rounded-2xl border border-white/10 text-sm text-muted-foreground hover:text-foreground hover:border-white/20 transition-all flex items-center justify-center gap-2"
+          >
+            <Trophy className="w-4 h-4" /> Lihat Leaderboard Minggu Ini
+          </button>
         </div>
-
-        {/* Start button */}
-        <button
-          onClick={startSession}
-          disabled={loading}
-          className="w-full mt-8 py-4 rounded-2xl gradient-primary text-white font-bold text-base hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-2"
-        >
-          {loading ? (
-            <Loader2 className="w-5 h-5 animate-spin" />
-          ) : (
-            <Flame className="w-5 h-5" />
-          )}
-          Mulai Trivia
-        </button>
-
-        {/* Leaderboard link */}
-        <button
-          onClick={loadLeaderboard}
-          className="w-full mt-3 py-3 rounded-2xl border border-white/10 text-sm text-muted-foreground hover:text-foreground hover:border-white/20 transition-all flex items-center justify-center gap-2"
-        >
-          <Trophy className="w-4 h-4" /> Lihat Leaderboard Minggu Ini
-        </button>
-      </div>
+        <NativeBannerAd className="px-4" />
+      </>
     );
   }
 
@@ -728,213 +739,216 @@ export default function QuizPage() {
     };
 
     return (
-      <div className="min-h-screen max-w-lg mx-auto px-4 py-6 pb-28 lg:pb-8">
-        {/* Header: progress + timer */}
-        <div className="flex items-center gap-3 mb-4">
-          <span className="text-xs text-muted-foreground shrink-0">
-            {currentIdx + 1} / {session.total_questions}
-          </span>
-          <div className="flex-1">
-            {/* Progress bar */}
-            <div className="w-full h-1 bg-white/10 rounded-full overflow-hidden mb-1.5">
-              <div
-                className="h-full bg-primary rounded-full transition-all"
-                style={{
-                  width: `${(currentIdx / session.total_questions) * 100}%`,
-                }}
-              />
-            </div>
-            {phase === "playing" && (
-              <TimerBar seconds={timeLeft} total={TIME_PER_QUESTION} />
-            )}
-          </div>
-          <div className="flex items-center gap-1 shrink-0">
-            {phase === "playing" && (
-              <span
-                className={cn(
-                  "text-xs font-bold w-8 text-right",
-                  timeLeft <= 5 ? "text-rose-400" : "text-muted-foreground",
-                )}
-              >
-                {timeLeft}s
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* Stats row */}
-        <div className="flex items-center gap-3 mb-4">
-          <span
-            className={cn(
-              "text-xs px-2 py-0.5 rounded-md border",
-              DIFFICULTY_COLORS[currentQ.difficulty],
-            )}
-          >
-            {DIFFICULTY_LABELS[currentQ.difficulty]}
-          </span>
-          <span className="text-xs text-muted-foreground">
-            {CATEGORY_LABELS[currentQ.category] ?? currentQ.category}
-          </span>
-          <div className="flex-1" />
-          <span className="text-xs font-medium text-amber-400">
-            +{totalXp} XP
-          </span>
-          <span className="text-xs font-medium text-emerald-400">
-            +{totalPts} Pts
-          </span>
-          {doubleActive && (
-            <span className="text-xs font-bold text-pink-400 animate-pulse">
-              ×2 aktif
+      <>
+        <div className="max-w-lg mx-auto px-4 py-6 pb-28 lg:pb-8">
+          {/* Header: progress + timer */}
+          <div className="flex items-center gap-3 mb-4">
+            <span className="text-xs text-muted-foreground shrink-0">
+              {currentIdx + 1} / {session.total_questions}
             </span>
-          )}
-        </div>
-
-        {/* Image jika ada */}
-        {currentQ.image_url && (
-          <div className="mb-4 rounded-2xl overflow-hidden aspect-[2/1] bg-white/5">
-            <img
-              src={currentQ.image_url}
-              alt="Poster"
-              className="w-full h-full object-cover"
-            />
-          </div>
-        )}
-
-        {/* Soal */}
-        <div className="mb-5">
-          <p className="text-base font-semibold leading-relaxed">
-            {currentQ.question_text}
-          </p>
-        </div>
-
-        {/* Options */}
-        <div className="space-y-2.5 mb-6">
-          {OPTION_KEYS.map((key) => (
-            <OptionButton
-              key={key}
-              label={key}
-              text={optionTexts[key]}
-              selected={selectedAnswer === key}
-              correct={answerResult?.correct_option === key}
-              revealed={phase === "answered"}
-              eliminated={eliminatedOpts.includes(key)}
-              onClick={() => phase === "playing" && submitAnswer(key)}
-            />
-          ))}
-        </div>
-
-        {/* Explanation (setelah jawab) */}
-        {phase === "answered" && answerResult && (
-          <div
-            className={cn(
-              "p-4 rounded-xl border mb-5",
-              answerResult.correct
-                ? "bg-emerald-500/10 border-emerald-500/20"
-                : "bg-rose-500/10 border-rose-500/20",
-            )}
-          >
-            <div className="flex items-center gap-2 mb-1.5">
-              {answerResult.correct ? (
-                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-              ) : (
-                <XCircle className="w-4 h-4 text-rose-400" />
+            <div className="flex-1">
+              {/* Progress bar */}
+              <div className="w-full h-1 bg-white/10 rounded-full overflow-hidden mb-1.5">
+                <div
+                  className="h-full bg-primary rounded-full transition-all"
+                  style={{
+                    width: `${(currentIdx / session.total_questions) * 100}%`,
+                  }}
+                />
+              </div>
+              {phase === "playing" && (
+                <TimerBar seconds={timeLeft} total={TIME_PER_QUESTION} />
               )}
-              <span
-                className={cn(
-                  "text-sm font-semibold",
-                  answerResult.correct ? "text-emerald-300" : "text-rose-300",
-                )}
-              >
-                {answerResult.correct ? "Benar!" : "Salah"}
-              </span>
-              {answerResult.xp_earned > 0 && (
-                <span className="ml-auto text-xs text-amber-400 font-medium">
-                  +{answerResult.xp_earned} XP
+            </div>
+            <div className="flex items-center gap-1 shrink-0">
+              {phase === "playing" && (
+                <span
+                  className={cn(
+                    "text-xs font-bold w-8 text-right",
+                    timeLeft <= 5 ? "text-rose-400" : "text-muted-foreground",
+                  )}
+                >
+                  {timeLeft}s
                 </span>
               )}
             </div>
-            {answerResult.explanation && (
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                {answerResult.explanation}
-              </p>
+          </div>
+
+          {/* Stats row */}
+          <div className="flex items-center gap-3 mb-4">
+            <span
+              className={cn(
+                "text-xs px-2 py-0.5 rounded-md border",
+                DIFFICULTY_COLORS[currentQ.difficulty],
+              )}
+            >
+              {DIFFICULTY_LABELS[currentQ.difficulty]}
+            </span>
+            <span className="text-xs text-muted-foreground">
+              {CATEGORY_LABELS[currentQ.category] ?? currentQ.category}
+            </span>
+            <div className="flex-1" />
+            <span className="text-xs font-medium text-amber-400">
+              +{totalXp} XP
+            </span>
+            <span className="text-xs font-medium text-emerald-400">
+              +{totalPts} Pts
+            </span>
+            {doubleActive && (
+              <span className="text-xs font-bold text-pink-400 animate-pulse">
+                ×2 aktif
+              </span>
             )}
           </div>
-        )}
 
-        {/* Powerups (hanya saat playing) */}
-        {phase === "playing" && powerups && (
-          <div className="flex gap-2 mb-4">
-            {(
-              [
-                "fifty_fifty",
-                "extra_time",
-                "skip",
-                "double_points",
-              ] as PowerupType[]
-            ).map((type) => {
-              const meta = POWERUP_META[type];
-              const pu = powerups[type];
-              const Icon = meta.icon;
-              return (
-                <button
-                  key={type}
-                  disabled={pu.used}
-                  onClick={() => {
-                    if (type === "fifty_fifty") useFiftyFifty();
-                    else if (type === "extra_time") useExtraTime();
-                    else if (type === "skip") useSkip();
-                    else if (type === "double_points") useDoublePoints();
-                  }}
-                  title={pu.label}
-                  className={cn(
-                    "flex-1 flex flex-col items-center gap-0.5 py-2 rounded-xl border text-xs transition-all",
-                    pu.used
-                      ? "border-white/5 bg-white/[0.02] text-muted-foreground/30"
-                      : `border-white/15 bg-white/[0.04] ${meta.color} hover:bg-white/[0.08]`,
-                    type === "double_points" &&
-                      doubleActive &&
-                      "border-pink-500 bg-pink-500/10",
-                  )}
-                >
-                  <Icon className="w-4 h-4" />
-                  <span>{meta.shortLabel}</span>
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Auto-next countdown (setelah jawab) */}
-        {phase === "answered" && (
-          <button
-            onClick={nextQuestion}
-            className="w-full py-3.5 rounded-xl border border-white/10 bg-white/[0.03] hover:bg-white/[0.06] transition-colors text-sm font-semibold text-muted-foreground flex flex-col items-center gap-2 overflow-hidden relative"
-          >
-            <span className="flex items-center gap-2">
-              {currentIdx + 1 >= session.total_questions ? (
-                <>
-                  <Trophy className="w-4 h-4" /> Lihat Hasil
-                </>
-              ) : (
-                <>
-                  Soal Berikutnya <ChevronRight className="w-4 h-4" />
-                </>
-              )}
-            </span>
-            {/* Progress bar auto-next */}
-            <div className="w-full h-0.5 bg-white/10 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-primary/50 rounded-full transition-all"
-                style={{
-                  width: `${autoNextProgress}%`,
-                  transitionDuration: `${AUTO_NEXT_DELAY / 20}ms`,
-                  transitionTimingFunction: "linear",
-                }}
+          {/* Image jika ada */}
+          {currentQ.image_url && (
+            <div className="mb-4 rounded-2xl overflow-hidden aspect-[2/1] bg-white/5">
+              <img
+                src={currentQ.image_url}
+                alt="Poster"
+                className="w-full h-full object-cover"
               />
             </div>
-          </button>
-        )}
-      </div>
+          )}
+
+          {/* Soal */}
+          <div className="mb-5">
+            <p className="text-base font-semibold leading-relaxed">
+              {currentQ.question_text}
+            </p>
+          </div>
+
+          {/* Options */}
+          <div className="space-y-2.5 mb-6">
+            {OPTION_KEYS.map((key) => (
+              <OptionButton
+                key={key}
+                label={key}
+                text={optionTexts[key]}
+                selected={selectedAnswer === key}
+                correct={answerResult?.correct_option === key}
+                revealed={phase === "answered"}
+                eliminated={eliminatedOpts.includes(key)}
+                onClick={() => phase === "playing" && submitAnswer(key)}
+              />
+            ))}
+          </div>
+
+          {/* Explanation (setelah jawab) */}
+          {phase === "answered" && answerResult && (
+            <div
+              className={cn(
+                "p-4 rounded-xl border mb-5",
+                answerResult.correct
+                  ? "bg-emerald-500/10 border-emerald-500/20"
+                  : "bg-rose-500/10 border-rose-500/20",
+              )}
+            >
+              <div className="flex items-center gap-2 mb-1.5">
+                {answerResult.correct ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                ) : (
+                  <XCircle className="w-4 h-4 text-rose-400" />
+                )}
+                <span
+                  className={cn(
+                    "text-sm font-semibold",
+                    answerResult.correct ? "text-emerald-300" : "text-rose-300",
+                  )}
+                >
+                  {answerResult.correct ? "Benar!" : "Salah"}
+                </span>
+                {answerResult.xp_earned > 0 && (
+                  <span className="ml-auto text-xs text-amber-400 font-medium">
+                    +{answerResult.xp_earned} XP
+                  </span>
+                )}
+              </div>
+              {answerResult.explanation && (
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  {answerResult.explanation}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Powerups (hanya saat playing) */}
+          {phase === "playing" && powerups && (
+            <div className="flex gap-2 mb-4">
+              {(
+                [
+                  "fifty_fifty",
+                  "extra_time",
+                  "skip",
+                  "double_points",
+                ] as PowerupType[]
+              ).map((type) => {
+                const meta = POWERUP_META[type];
+                const pu = powerups[type];
+                const Icon = meta.icon;
+                return (
+                  <button
+                    key={type}
+                    disabled={pu.used}
+                    onClick={() => {
+                      if (type === "fifty_fifty") useFiftyFifty();
+                      else if (type === "extra_time") useExtraTime();
+                      else if (type === "skip") useSkip();
+                      else if (type === "double_points") useDoublePoints();
+                    }}
+                    title={pu.label}
+                    className={cn(
+                      "flex-1 flex flex-col items-center gap-0.5 py-2 rounded-xl border text-xs transition-all",
+                      pu.used
+                        ? "border-white/5 bg-white/[0.02] text-muted-foreground/30"
+                        : `border-white/15 bg-white/[0.04] ${meta.color} hover:bg-white/[0.08]`,
+                      type === "double_points" &&
+                        doubleActive &&
+                        "border-pink-500 bg-pink-500/10",
+                    )}
+                  >
+                    <Icon className="w-4 h-4" />
+                    <span>{meta.shortLabel}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Auto-next countdown (setelah jawab) */}
+          {phase === "answered" && (
+            <button
+              onClick={nextQuestion}
+              className="w-full py-3.5 rounded-xl border border-white/10 bg-white/[0.03] hover:bg-white/[0.06] transition-colors text-sm font-semibold text-muted-foreground flex flex-col items-center gap-2 overflow-hidden relative"
+            >
+              <span className="flex items-center gap-2">
+                {currentIdx + 1 >= session.total_questions ? (
+                  <>
+                    <Trophy className="w-4 h-4" /> Lihat Hasil
+                  </>
+                ) : (
+                  <>
+                    Soal Berikutnya <ChevronRight className="w-4 h-4" />
+                  </>
+                )}
+              </span>
+              {/* Progress bar auto-next */}
+              <div className="w-full h-0.5 bg-white/10 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-primary/50 rounded-full transition-all"
+                  style={{
+                    width: `${autoNextProgress}%`,
+                    transitionDuration: `${AUTO_NEXT_DELAY / 20}ms`,
+                    transitionTimingFunction: "linear",
+                  }}
+                />
+              </div>
+            </button>
+          )}
+        </div>
+        <NativeBannerAd className="px-4" />
+      </>
     );
   }
 
@@ -945,117 +959,121 @@ export default function QuizPage() {
     );
 
     return (
-      <div className="min-h-screen max-w-lg mx-auto px-4 py-8 pb-28 lg:pb-8">
-        {/* Result hero */}
-        <div className="text-center mb-8">
-          <div
-            className={cn(
-              "w-20 h-20 rounded-2xl mx-auto mb-4 flex items-center justify-center",
-              sessionResult.is_perfect
-                ? "bg-amber-500/20 border-2 border-amber-500/40"
-                : "bg-primary/10 border border-primary/20",
-            )}
-          >
-            {sessionResult.is_perfect ? (
-              <Crown className="w-10 h-10 text-amber-400" />
-            ) : (
-              <Trophy className="w-10 h-10 text-primary" />
-            )}
+      <>
+        <div className="max-w-lg mx-auto px-4 py-8 pb-28 lg:pb-8">
+          {/* Result hero */}
+          <div className="text-center mb-8">
+            <div
+              className={cn(
+                "w-20 h-20 rounded-2xl mx-auto mb-4 flex items-center justify-center",
+                sessionResult.is_perfect
+                  ? "bg-amber-500/20 border-2 border-amber-500/40"
+                  : "bg-primary/10 border border-primary/20",
+              )}
+            >
+              {sessionResult.is_perfect ? (
+                <Crown className="w-10 h-10 text-amber-400" />
+              ) : (
+                <Trophy className="w-10 h-10 text-primary" />
+              )}
+            </div>
+            <h2 className="text-2xl font-bold mb-1">
+              {sessionResult.is_perfect ? "Perfect Score! 🎉" : "Sesi Selesai!"}
+            </h2>
+            <p className="text-muted-foreground text-sm">
+              {sessionResult.correct_count} dari {sessionResult.total_questions}{" "}
+              jawaban benar
+            </p>
           </div>
-          <h2 className="text-2xl font-bold mb-1">
-            {sessionResult.is_perfect ? "Perfect Score! 🎉" : "Sesi Selesai!"}
-          </h2>
-          <p className="text-muted-foreground text-sm">
-            {sessionResult.correct_count} dari {sessionResult.total_questions}{" "}
-            jawaban benar
-          </p>
-        </div>
 
-        {/* Score cards */}
-        <div className="grid grid-cols-2 gap-3 mb-6">
-          <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/8 text-center">
-            <div className="text-3xl font-bold text-primary mb-1">
-              {accuracy}%
+          {/* Score cards */}
+          <div className="grid grid-cols-2 gap-3 mb-6">
+            <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/8 text-center">
+              <div className="text-3xl font-bold text-primary mb-1">
+                {accuracy}%
+              </div>
+              <div className="text-xs text-muted-foreground">Akurasi</div>
             </div>
-            <div className="text-xs text-muted-foreground">Akurasi</div>
-          </div>
-          <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/8 text-center">
-            <div className="text-3xl font-bold text-amber-400 mb-1">
-              {sessionResult.score.toLocaleString()}
+            <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/8 text-center">
+              <div className="text-3xl font-bold text-amber-400 mb-1">
+                {sessionResult.score.toLocaleString()}
+              </div>
+              <div className="text-xs text-muted-foreground">Skor</div>
             </div>
-            <div className="text-xs text-muted-foreground">Skor</div>
           </div>
-        </div>
 
-        {/* Rewards */}
-        <div className="p-4 rounded-2xl bg-primary/5 border border-primary/15 mb-6">
-          <h3 className="text-sm font-semibold mb-3">Reward Didapat</h3>
-          <div className="space-y-2">
-            <div className="flex justify-between items-center text-sm">
-              <span className="text-muted-foreground">
-                XP dari jawaban benar
-              </span>
-              <span className="font-bold text-amber-400">
-                +{sessionResult.xp_earned - sessionResult.bonus_xp} XP
-              </span>
-            </div>
-            {sessionResult.bonus_xp > 0 && (
+          {/* Rewards */}
+          <div className="p-4 rounded-2xl bg-primary/5 border border-primary/15 mb-6">
+            <h3 className="text-sm font-semibold mb-3">Reward Didapat</h3>
+            <div className="space-y-2">
               <div className="flex justify-between items-center text-sm">
                 <span className="text-muted-foreground">
-                  {sessionResult.is_perfect
-                    ? "Perfect score bonus"
-                    : "Session bonus"}
+                  XP dari jawaban benar
                 </span>
                 <span className="font-bold text-amber-400">
-                  +{sessionResult.bonus_xp} XP
+                  +{sessionResult.xp_earned - sessionResult.bonus_xp} XP
                 </span>
               </div>
-            )}
-            <div className="border-t border-white/8 pt-2 flex justify-between items-center">
-              <span className="text-sm font-semibold">Total XP</span>
-              <span className="text-lg font-bold text-amber-400">
-                +{sessionResult.xp_earned} XP
-              </span>
-            </div>
-            <div className="flex justify-between items-center text-sm">
-              <span className="text-muted-foreground">Points</span>
-              <span className="font-bold text-emerald-400">
-                +{sessionResult.pts_earned} Pts
-              </span>
-            </div>
-            {sessionResult.tickets_earned > 0 && (
+              {sessionResult.bonus_xp > 0 && (
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-muted-foreground">
+                    {sessionResult.is_perfect
+                      ? "Perfect score bonus"
+                      : "Session bonus"}
+                  </span>
+                  <span className="font-bold text-amber-400">
+                    +{sessionResult.bonus_xp} XP
+                  </span>
+                </div>
+              )}
+              <div className="border-t border-white/8 pt-2 flex justify-between items-center">
+                <span className="text-sm font-semibold">Total XP</span>
+                <span className="text-lg font-bold text-amber-400">
+                  +{sessionResult.xp_earned} XP
+                </span>
+              </div>
               <div className="flex justify-between items-center text-sm">
-                <span className="text-muted-foreground">Lucky Ticket</span>
-                <span className="font-bold text-violet-400 flex items-center gap-1">
-                  <Ticket className="w-3 h-3" />+{sessionResult.tickets_earned}
+                <span className="text-muted-foreground">Points</span>
+                <span className="font-bold text-emerald-400">
+                  +{sessionResult.pts_earned} Pts
                 </span>
               </div>
-            )}
+              {sessionResult.tickets_earned > 0 && (
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-muted-foreground">Lucky Ticket</span>
+                  <span className="font-bold text-violet-400 flex items-center gap-1">
+                    <Ticket className="w-3 h-3" />+
+                    {sessionResult.tickets_earned}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="space-y-2.5">
+            <button
+              onClick={() => setPhase("lobby")}
+              className="w-full py-3.5 rounded-xl gradient-primary text-white font-semibold text-sm flex items-center justify-center gap-2"
+            >
+              <RotateCcw className="w-4 h-4" /> Main Lagi
+            </button>
+            <button
+              onClick={loadLeaderboard}
+              className="w-full py-3 rounded-xl border border-white/10 text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center justify-center gap-2"
+            >
+              <Trophy className="w-4 h-4" /> Leaderboard
+            </button>
+            <Link
+              href="/profile"
+              className="w-full py-3 rounded-xl border border-white/10 text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center justify-center gap-2"
+            >
+              <Star className="w-4 h-4" /> Lihat Progression
+            </Link>
           </div>
         </div>
-
-        {/* Actions */}
-        <div className="space-y-2.5">
-          <button
-            onClick={() => setPhase("lobby")}
-            className="w-full py-3.5 rounded-xl gradient-primary text-white font-semibold text-sm flex items-center justify-center gap-2"
-          >
-            <RotateCcw className="w-4 h-4" /> Main Lagi
-          </button>
-          <button
-            onClick={loadLeaderboard}
-            className="w-full py-3 rounded-xl border border-white/10 text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center justify-center gap-2"
-          >
-            <Trophy className="w-4 h-4" /> Leaderboard
-          </button>
-          <Link
-            href="/profile"
-            className="w-full py-3 rounded-xl border border-white/10 text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center justify-center gap-2"
-          >
-            <Star className="w-4 h-4" /> Lihat Progression
-          </Link>
-        </div>
-      </div>
+        <NativeBannerAd className="px-4" />
+      </>
     );
   }
 
@@ -1065,97 +1083,100 @@ export default function QuizPage() {
     const rankIcons = [Crown, Medal, Medal];
 
     return (
-      <div className="min-h-screen max-w-lg mx-auto px-4 py-6 pb-28 lg:pb-8">
-        <div className="flex items-center gap-3 mb-6">
-          <button
-            onClick={() => setPhase("lobby")}
-            className="p-2 rounded-lg hover:bg-white/5 text-muted-foreground transition-colors"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-          <div>
-            <h2 className="text-lg font-bold">Leaderboard Minggu Ini</h2>
-            <p className="text-xs text-muted-foreground">
-              Global · Reset setiap Senin
-            </p>
-          </div>
-        </div>
-
-        {/* User rank card jika tidak di top 50 */}
-        {userRank && !leaderboard.find((e) => e.is_current_user) && (
-          <div className="mb-4 p-3 rounded-xl bg-primary/10 border border-primary/20 flex items-center gap-3">
-            <span className="text-sm font-bold text-primary w-8 text-center">
-              #{userRank.rank}
-            </span>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate">Kamu</p>
+      <>
+        <div className="max-w-lg mx-auto px-4 py-6 pb-28 lg:pb-8">
+          <div className="flex items-center gap-3 mb-6">
+            <button
+              onClick={() => setPhase("lobby")}
+              className="p-2 rounded-lg hover:bg-white/5 text-muted-foreground transition-colors"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+            <div>
+              <h2 className="text-lg font-bold">Leaderboard Minggu Ini</h2>
               <p className="text-xs text-muted-foreground">
-                {userRank.weekly_score.toLocaleString()} poin
+                Global · Reset setiap Senin
               </p>
             </div>
           </div>
-        )}
 
-        {leaderboard.length === 0 ? (
-          <div className="text-center py-20 text-muted-foreground text-sm">
-            Belum ada data leaderboard minggu ini.
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {leaderboard.map((entry, idx) => {
-              const RankIcon = idx < 3 ? rankIcons[idx] : null;
-              return (
-                <div
-                  key={entry.user_id}
-                  className={cn(
-                    "flex items-center gap-3 p-3 rounded-xl border transition-colors",
-                    entry.is_current_user
-                      ? "bg-primary/10 border-primary/20"
-                      : "bg-white/[0.02] border-white/8",
-                  )}
-                >
+          {/* User rank card jika tidak di top 50 */}
+          {userRank && !leaderboard.find((e) => e.is_current_user) && (
+            <div className="mb-4 p-3 rounded-xl bg-primary/10 border border-primary/20 flex items-center gap-3">
+              <span className="text-sm font-bold text-primary w-8 text-center">
+                #{userRank.rank}
+              </span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">Kamu</p>
+                <p className="text-xs text-muted-foreground">
+                  {userRank.weekly_score.toLocaleString()} poin
+                </p>
+              </div>
+            </div>
+          )}
+
+          {leaderboard.length === 0 ? (
+            <div className="text-center py-20 text-muted-foreground text-sm">
+              Belum ada data leaderboard minggu ini.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {leaderboard.map((entry, idx) => {
+                const RankIcon = idx < 3 ? rankIcons[idx] : null;
+                return (
                   <div
+                    key={entry.user_id}
                     className={cn(
-                      "w-8 text-center shrink-0 font-bold text-sm",
-                      idx < 3 ? rankColors[idx] : "text-muted-foreground",
+                      "flex items-center gap-3 p-3 rounded-xl border transition-colors",
+                      entry.is_current_user
+                        ? "bg-primary/10 border-primary/20"
+                        : "bg-white/[0.02] border-white/8",
                     )}
                   >
-                    {RankIcon ? (
-                      <RankIcon className="w-4 h-4 mx-auto" />
-                    ) : (
-                      `#${entry.rank}`
-                    )}
-                  </div>
-                  {entry.avatar_url ? (
-                    <img
-                      src={entry.avatar_url}
-                      alt={entry.display_name}
-                      className="w-8 h-8 rounded-full object-cover shrink-0"
-                    />
-                  ) : (
-                    <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary shrink-0">
-                      {entry.display_name[0]?.toUpperCase()}
+                    <div
+                      className={cn(
+                        "w-8 text-center shrink-0 font-bold text-sm",
+                        idx < 3 ? rankColors[idx] : "text-muted-foreground",
+                      )}
+                    >
+                      {RankIcon ? (
+                        <RankIcon className="w-4 h-4 mx-auto" />
+                      ) : (
+                        `#${entry.rank}`
+                      )}
                     </div>
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">
-                      {entry.display_name}
-                      {entry.is_current_user ? " (Kamu)" : ""}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {entry.sessions_count} sesi · {entry.perfect_count}{" "}
-                      perfect
-                    </p>
+                    {entry.avatar_url ? (
+                      <img
+                        src={entry.avatar_url}
+                        alt={entry.display_name}
+                        className="w-8 h-8 rounded-full object-cover shrink-0"
+                      />
+                    ) : (
+                      <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary shrink-0">
+                        {entry.display_name[0]?.toUpperCase()}
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">
+                        {entry.display_name}
+                        {entry.is_current_user ? " (Kamu)" : ""}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {entry.sessions_count} sesi · {entry.perfect_count}{" "}
+                        perfect
+                      </p>
+                    </div>
+                    <span className="text-sm font-bold text-amber-400 shrink-0">
+                      {entry.weekly_score.toLocaleString()}
+                    </span>
                   </div>
-                  <span className="text-sm font-bold text-amber-400 shrink-0">
-                    {entry.weekly_score.toLocaleString()}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+        <NativeBannerAd className="px-4" />
+      </>
     );
   }
 

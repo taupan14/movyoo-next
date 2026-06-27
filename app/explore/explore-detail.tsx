@@ -42,6 +42,8 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { motion } from "framer-motion";
 
+import NativeBannerAd from "@/components/ads/NativeBannerAd";
+
 // ─── Types (Explore) ──────────────────────────────────────────────────────────
 
 interface Movie {
@@ -3026,7 +3028,7 @@ function ExploreContent() {
     },
     {
       key: "tv",
-      label: "TV Series",
+      label: "Series",
       icon: Tv,
     },
   ];
@@ -3197,6 +3199,8 @@ function ExploreContent() {
           />
         </>
       )}
+
+      <NativeBannerAd className="px-4" />
 
       {/* Movie / TV Grid */}
       {!isCinemaTab && (

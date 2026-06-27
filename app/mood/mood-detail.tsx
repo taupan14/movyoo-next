@@ -26,6 +26,7 @@ import {
   Info,
   Star,
 } from "lucide-react";
+import NativeBannerAd from "@/components/ads/NativeBannerAd";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -636,6 +637,8 @@ export default function MoodClient() {
           )}
         </div>
       </div>
+
+      <NativeBannerAd className="px-4" />
 
       {/* Content */}
       <div className="px-0 lg:px-2">

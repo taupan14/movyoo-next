@@ -1,8 +1,8 @@
 "use client";
 
-// components/auth/auth-modal.tsx — FILE BARU
+// components/auth/auth-modal.tsx
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   X,
   Mail,
@@ -13,12 +13,80 @@ import {
   Eye,
   EyeOff,
   Loader2,
+  CheckCircle2,
+  ArrowLeft,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 
 type AuthTab = "signin" | "signup";
 type EmailMode = "password" | "magic_link";
+
+// ─── Email Sent Screen ────────────────────────────────────────────────────────
+
+function EmailSentScreen({
+  email,
+  type,
+  onBack,
+}: {
+  email: string;
+  type: "verify" | "magic";
+  onBack: () => void;
+}) {
+  return (
+    <div className="p-6 flex flex-col items-center text-center gap-4">
+      {/* Icon */}
+      <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mt-2">
+        <Mail className="w-8 h-8 text-primary" />
+      </div>
+
+      {/* Text */}
+      <div className="space-y-1.5">
+        <h3 className="text-lg font-semibold text-foreground">
+          {type === "verify" ? "Cek email kamu" : "Link dikirim!"}
+        </h3>
+        <p className="text-sm text-muted-foreground leading-relaxed">
+          {type === "verify" ? (
+            <>
+              Kami kirimkan link konfirmasi ke{" "}
+              <span className="text-foreground font-medium">{email}</span>. Klik
+              link tersebut untuk mengaktifkan akun, lalu login.
+            </>
+          ) : (
+            <>
+              Link masuk dikirim ke{" "}
+              <span className="text-foreground font-medium">{email}</span>.
+              Tidak perlu password — cukup klik link di email.
+            </>
+          )}
+        </p>
+      </div>
+
+      {/* Tips */}
+      <div className="w-full rounded-xl bg-white/5 border border-white/8 p-3 text-left space-y-1.5">
+        <p className="text-xs font-medium text-muted-foreground">
+          Tidak menerima email?
+        </p>
+        <ul className="text-xs text-muted-foreground space-y-1 list-disc list-inside">
+          <li>Cek folder Spam atau Promotions</li>
+          <li>Tunggu beberapa menit</li>
+          <li>Pastikan alamat email sudah benar</li>
+        </ul>
+      </div>
+
+      {/* Back */}
+      <button
+        onClick={onBack}
+        className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+      >
+        <ArrowLeft className="w-4 h-4" />
+        Kembali
+      </button>
+    </div>
+  );
+}
+
+// ─── Main Modal ───────────────────────────────────────────────────────────────
 
 export function AuthModal() {
   const {
@@ -35,6 +103,15 @@ export function AuthModal() {
   const [tab, setTab] = useState<AuthTab>(authModalTab);
   const [emailMode, setEmailMode] = useState<EmailMode>("password");
 
+  // Sync tab jika authModalTab berubah dari luar (e.g. openAuthModal("signup"))
+  useEffect(() => {
+    if (authModalOpen) {
+      setTab(authModalTab);
+      setEmailSent(null);
+      setError(null);
+    }
+  }, [authModalOpen, authModalTab]);
+
   // Form state
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -42,14 +119,21 @@ export function AuthModal() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  // "email sent" state: null = form normal, "verify" = setelah register, "magic" = setelah magic link
+  const [emailSent, setEmailSent] = useState<"verify" | "magic" | null>(null);
 
   if (!authModalOpen) return null;
 
-  const reset = () => {
-    setError(null);
-    setSuccessMsg(null);
+  const reset = () => setError(null);
+
+  const handleBackFromEmailSent = () => {
+    setEmailSent(null);
+    setPassword("");
+    reset();
   };
+
+  // ── OAuth ──────────────────────────────────────────────────────────────────
 
   const handleGoogle = async () => {
     setLoading("google");
@@ -65,40 +149,68 @@ export function AuthModal() {
     setLoading(null);
   };
 
-  const handleMagicLink = async () => {
-    if (!email) return setError("Masukkan email terlebih dahulu.");
-    setLoading("magic");
-    reset();
-    const { error: err } = await signInWithMagicLink(email);
-    setLoading(null);
-    if (err) return setError(err);
-    setSuccessMsg(`Link dikirim ke ${email}. Cek inbox kamu!`);
-  };
+  // ── Email submit ───────────────────────────────────────────────────────────
 
   const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     reset();
 
+    // Magic link
     if (emailMode === "magic_link") {
-      return handleMagicLink();
+      if (!email) return setError("Masukkan email terlebih dahulu.");
+      setLoading("magic");
+      const { error: err } = await signInWithMagicLink(email);
+      setLoading(null);
+      if (err) return setError(err);
+      setEmailSent("magic");
+      return;
     }
 
     setLoading("email");
 
     if (tab === "signin") {
+      // Login biasa
       const { error: err } = await signInWithEmail(email, password);
       setLoading(null);
-      if (err) return setError(err);
+      if (err) {
+        // Supabase mengembalikan pesan teknis — mapping ke bahasa Indonesia
+        if (
+          err.toLowerCase().includes("invalid") ||
+          err.toLowerCase().includes("credentials")
+        ) {
+          return setError("Email atau password salah.");
+        }
+        if (err.toLowerCase().includes("email not confirmed")) {
+          return setError(
+            "Email belum dikonfirmasi. Cek inbox kamu dan klik link verifikasi.",
+          );
+        }
+        return setError(err);
+      }
       closeAuthModal();
     } else {
+      // Register
       if (!name.trim()) {
         setLoading(null);
         return setError("Nama tidak boleh kosong.");
       }
+      if (password.length < 8) {
+        setLoading(null);
+        return setError("Password minimal 8 karakter.");
+      }
+
       const { error: err } = await signUpWithEmail(email, password, name);
       setLoading(null);
-      if (err) return setError(err);
-      setSuccessMsg("Akun dibuat! Cek email untuk konfirmasi.");
+      if (err) {
+        if (err.toLowerCase().includes("already registered")) {
+          return setError(
+            "Email sudah terdaftar. Coba masuk atau gunakan email lain.",
+          );
+        }
+        return setError(err);
+      }
+      // Tampilkan layar "cek email"
+      setEmailSent("verify");
     }
   };
 
@@ -106,10 +218,10 @@ export function AuthModal() {
 
   return (
     <>
-      {/* Backdrop */}
+      {/* Backdrop — tidak bisa dismiss jika sedang di layar email sent */}
       <div
         className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm"
-        onClick={closeAuthModal}
+        onClick={emailSent ? undefined : closeAuthModal}
       />
 
       {/* Modal */}
@@ -122,137 +234,180 @@ export function AuthModal() {
           )}
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Header */}
-          <div className="flex items-center justify-between p-6 pb-0">
-            <div>
-              <h2 className="text-xl font-bold text-foreground">
-                {tab === "signin" ? "Masuk ke Movyoo" : "Buat akun baru"}
-              </h2>
-              <p className="text-sm text-muted-foreground mt-0.5">
-                {tab === "signin"
-                  ? "Lanjutkan pengalaman nonton kamu"
-                  : "Gratis selamanya · Tanpa kartu kredit"}
-              </p>
+          {/* Header — disembunyikan saat emailSent */}
+          {!emailSent && (
+            <div className="flex items-center justify-between p-6 pb-0">
+              <div>
+                <h2 className="text-xl font-bold text-foreground">
+                  {tab === "signin" ? "Masuk ke Movyoo" : "Buat akun baru"}
+                </h2>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  {tab === "signin"
+                    ? "Lanjutkan pengalaman nonton kamu"
+                    : "Gratis selamanya · Tanpa kartu kredit"}
+                </p>
+              </div>
+              <button
+                onClick={closeAuthModal}
+                className="p-2 rounded-lg hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
-            <button
-              onClick={closeAuthModal}
-              className="p-2 rounded-lg hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
+          )}
 
-          <div className="p-6 space-y-4">
-            {/* Tab switch */}
-            <div className="flex gap-1 p-1 rounded-xl bg-white/5">
-              {(["signin", "signup"] as AuthTab[]).map((t) => (
+          {/* ── Email Sent Screen ── */}
+          {emailSent ? (
+            <>
+              {/* Close button tetap tampil */}
+              <div className="absolute top-4 right-4">
                 <button
-                  key={t}
+                  onClick={closeAuthModal}
+                  className="p-2 rounded-lg hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <EmailSentScreen
+                email={email}
+                type={emailSent}
+                onBack={handleBackFromEmailSent}
+              />
+            </>
+          ) : (
+            /* ── Form Screen ── */
+            <div className="p-6 space-y-4">
+              {/* Tab switch */}
+              <div className="flex gap-1 p-1 rounded-xl bg-white/5">
+                {(["signin", "signup"] as AuthTab[]).map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => {
+                      setTab(t);
+                      reset();
+                    }}
+                    className={cn(
+                      "flex-1 py-2 rounded-lg text-sm font-medium transition-all",
+                      tab === t
+                        ? "bg-primary text-white shadow"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {t === "signin" ? "Masuk" : "Daftar"}
+                  </button>
+                ))}
+              </div>
+
+              {/* OAuth buttons */}
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={handleGoogle}
+                  disabled={isLoading}
+                  className={cn(
+                    "flex items-center justify-center gap-2 py-2.5 rounded-xl border border-white/10",
+                    "bg-white/5 hover:bg-white/10 text-sm font-medium transition-colors",
+                    "disabled:opacity-50 disabled:cursor-not-allowed",
+                  )}
+                >
+                  {loading === "google" ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <GoogleIcon />
+                  )}
+                  <span>Google</span>
+                </button>
+
+                <button
+                  onClick={handleGitHub}
+                  disabled={isLoading}
+                  className={cn(
+                    "flex items-center justify-center gap-2 py-2.5 rounded-xl border border-white/10",
+                    "bg-white/5 hover:bg-white/10 text-sm font-medium transition-colors",
+                    "disabled:opacity-50 disabled:cursor-not-allowed",
+                  )}
+                >
+                  {loading === "github" ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Github className="w-4 h-4" />
+                  )}
+                  <span>GitHub</span>
+                </button>
+              </div>
+
+              {/* Divider */}
+              <div className="relative flex items-center gap-3">
+                <div className="flex-1 h-px bg-white/10" />
+                <span className="text-xs text-muted-foreground">atau</span>
+                <div className="flex-1 h-px bg-white/10" />
+              </div>
+
+              {/* Email mode toggle */}
+              <div className="flex gap-1 p-1 rounded-xl bg-white/5">
+                <button
                   onClick={() => {
-                    setTab(t);
+                    setEmailMode("password");
                     reset();
                   }}
                   className={cn(
-                    "flex-1 py-2 rounded-lg text-sm font-medium transition-all",
-                    tab === t
-                      ? "bg-primary text-white shadow"
+                    "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-all",
+                    emailMode === "password"
+                      ? "bg-white/10 text-foreground"
                       : "text-muted-foreground hover:text-foreground",
                   )}
                 >
-                  {t === "signin" ? "Masuk" : "Daftar"}
+                  <Lock className="w-3.5 h-3.5" />
+                  Email & Password
                 </button>
-              ))}
-            </div>
+                <button
+                  onClick={() => {
+                    setEmailMode("magic_link");
+                    reset();
+                  }}
+                  className={cn(
+                    "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-all",
+                    emailMode === "magic_link"
+                      ? "bg-white/10 text-foreground"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  <Wand2 className="w-3.5 h-3.5" />
+                  Magic Link
+                </button>
+              </div>
 
-            {/* OAuth buttons */}
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={handleGoogle}
-                disabled={isLoading}
-                className={cn(
-                  "flex items-center justify-center gap-2 py-2.5 rounded-xl border border-white/10",
-                  "bg-white/5 hover:bg-white/10 text-sm font-medium transition-colors",
-                  "disabled:opacity-50 disabled:cursor-not-allowed",
+              {/* Form */}
+              <form onSubmit={handleEmailSubmit} className="space-y-3">
+                {/* Nama (signup + password mode only) */}
+                {tab === "signup" && emailMode === "password" && (
+                  <div className="relative">
+                    <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <input
+                      type="text"
+                      placeholder="Nama lengkap"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      autoComplete="name"
+                      className={cn(
+                        "w-full pl-10 pr-4 py-2.5 rounded-xl text-sm",
+                        "bg-white/5 border border-white/10 text-foreground",
+                        "placeholder:text-muted-foreground",
+                        "focus:outline-none focus:border-primary/50 focus:bg-white/8 transition",
+                      )}
+                    />
+                  </div>
                 )}
-              >
-                {loading === "google" ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <GoogleIcon />
-                )}
-                <span>Google</span>
-              </button>
 
-              <button
-                onClick={handleGitHub}
-                disabled={isLoading}
-                className={cn(
-                  "flex items-center justify-center gap-2 py-2.5 rounded-xl border border-white/10",
-                  "bg-white/5 hover:bg-white/10 text-sm font-medium transition-colors",
-                  "disabled:opacity-50 disabled:cursor-not-allowed",
-                )}
-              >
-                {loading === "github" ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Github className="w-4 h-4" />
-                )}
-                <span>GitHub</span>
-              </button>
-            </div>
-
-            {/* Divider */}
-            <div className="relative flex items-center gap-3">
-              <div className="flex-1 h-px bg-white/10" />
-              <span className="text-xs text-muted-foreground">atau</span>
-              <div className="flex-1 h-px bg-white/10" />
-            </div>
-
-            {/* Email mode toggle */}
-            <div className="flex gap-1 p-1 rounded-xl bg-white/5">
-              <button
-                onClick={() => {
-                  setEmailMode("password");
-                  reset();
-                }}
-                className={cn(
-                  "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-all",
-                  emailMode === "password"
-                    ? "bg-white/10 text-foreground"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                <Lock className="w-3.5 h-3.5" />
-                Email & Password
-              </button>
-              <button
-                onClick={() => {
-                  setEmailMode("magic_link");
-                  reset();
-                }}
-                className={cn(
-                  "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-all",
-                  emailMode === "magic_link"
-                    ? "bg-white/10 text-foreground"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                <Wand2 className="w-3.5 h-3.5" />
-                Magic Link
-              </button>
-            </div>
-
-            {/* Form */}
-            <form onSubmit={handleEmailSubmit} className="space-y-3">
-              {/* Nama (signup only) */}
-              {tab === "signup" && emailMode === "password" && (
+                {/* Email */}
                 <div className="relative">
-                  <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <input
-                    type="text"
-                    placeholder="Nama lengkap"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
+                    type="email"
+                    placeholder="Email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    autoComplete="email"
                     className={cn(
                       "w-full pl-10 pr-4 py-2.5 rounded-xl text-sm",
                       "bg-white/5 border border-white/10 text-foreground",
@@ -261,107 +416,92 @@ export function AuthModal() {
                     )}
                   />
                 </div>
-              )}
 
-              {/* Email */}
-              <div className="relative">
-                <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <input
-                  type="email"
-                  placeholder="Email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
+                {/* Password */}
+                {emailMode === "password" && (
+                  <div className="relative">
+                    <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      placeholder={
+                        tab === "signup"
+                          ? "Password (min. 8 karakter)"
+                          : "Password"
+                      }
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                      minLength={8}
+                      autoComplete={
+                        tab === "signup" ? "new-password" : "current-password"
+                      }
+                      className={cn(
+                        "w-full pl-10 pr-12 py-2.5 rounded-xl text-sm",
+                        "bg-white/5 border border-white/10 text-foreground",
+                        "placeholder:text-muted-foreground",
+                        "focus:outline-none focus:border-primary/50 transition",
+                      )}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
+                    </button>
+                  </div>
+                )}
+
+                {/* Error */}
+                {error && (
+                  <p className="text-xs text-destructive bg-destructive/10 px-3 py-2 rounded-lg">
+                    {error}
+                  </p>
+                )}
+
+                {/* Submit */}
+                <button
+                  type="submit"
+                  disabled={isLoading}
                   className={cn(
-                    "w-full pl-10 pr-4 py-2.5 rounded-xl text-sm",
-                    "bg-white/5 border border-white/10 text-foreground",
-                    "placeholder:text-muted-foreground",
-                    "focus:outline-none focus:border-primary/50 focus:bg-white/8 transition",
+                    "w-full py-2.5 rounded-xl font-medium text-sm",
+                    "gradient-primary text-white",
+                    "hover:opacity-90 active:scale-[0.98] transition-all",
+                    "disabled:opacity-50 disabled:cursor-not-allowed",
+                    "flex items-center justify-center gap-2",
                   )}
-                />
-              </div>
+                >
+                  {(loading === "email" || loading === "magic") && (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  )}
+                  {emailMode === "magic_link"
+                    ? "Kirim Magic Link"
+                    : tab === "signin"
+                      ? "Masuk"
+                      : "Buat Akun"}
+                </button>
+              </form>
 
-              {/* Password (jika bukan magic link) */}
-              {emailMode === "password" && (
-                <div className="relative">
-                  <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <input
-                    type={showPassword ? "text" : "password"}
-                    placeholder="Password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    minLength={8}
-                    className={cn(
-                      "w-full pl-10 pr-12 py-2.5 rounded-xl text-sm",
-                      "bg-white/5 border border-white/10 text-foreground",
-                      "placeholder:text-muted-foreground",
-                      "focus:outline-none focus:border-primary/50 transition",
-                    )}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  >
-                    {showPassword ? (
-                      <EyeOff className="w-4 h-4" />
-                    ) : (
-                      <Eye className="w-4 h-4" />
-                    )}
-                  </button>
-                </div>
-              )}
-
-              {/* Error / Success */}
-              {error && (
-                <p className="text-xs text-destructive bg-destructive/10 px-3 py-2 rounded-lg">
-                  {error}
+              {/* Magic link info */}
+              {emailMode === "magic_link" && (
+                <p className="text-xs text-muted-foreground text-center">
+                  Kami kirimkan link masuk ke email kamu — tidak perlu password.
                 </p>
               )}
-              {successMsg && (
-                <p className="text-xs text-green-400 bg-green-400/10 px-3 py-2 rounded-lg">
-                  {successMsg}
-                </p>
-              )}
-
-              {/* Submit */}
-              <button
-                type="submit"
-                disabled={isLoading}
-                className={cn(
-                  "w-full py-2.5 rounded-xl font-medium text-sm",
-                  "gradient-primary text-white",
-                  "hover:opacity-90 active:scale-[0.98] transition-all",
-                  "disabled:opacity-50 disabled:cursor-not-allowed",
-                  "flex items-center justify-center gap-2",
-                )}
-              >
-                {(loading === "email" || loading === "magic") && (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                )}
-                {emailMode === "magic_link"
-                  ? "Kirim Magic Link"
-                  : tab === "signin"
-                    ? "Masuk"
-                    : "Buat Akun"}
-              </button>
-            </form>
-
-            {/* Magic link info */}
-            {emailMode === "magic_link" && (
-              <p className="text-xs text-muted-foreground text-center">
-                Kami kirimkan link masuk ke email kamu — tidak perlu password.
-              </p>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </div>
     </>
   );
 }
 
-// Google icon SVG kecil
+// ─── Google Icon ──────────────────────────────────────────────────────────────
+
 function GoogleIcon() {
   return (
     <svg
