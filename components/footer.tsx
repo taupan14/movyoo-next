@@ -263,7 +263,7 @@ export function Footer() {
             <div className="flex flex-col gap-4">
               <Link
                 href="/"
-                onClick={() => go("/")}
+                onClick={startLoader}
                 className="flex items-center gap-2"
               >
                 <div className="w-9 h-9 rounded-lg gradient-primary flex items-center justify-center font-bold text-white text-sm">

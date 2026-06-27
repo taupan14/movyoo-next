@@ -8,7 +8,7 @@ import { createSupabaseServer } from "@/lib/supabase-server";
 
 // ─── GET ──────────────────────────────────────────────────────────────────────
 export async function GET() {
-  const supabase = createSupabaseServer();
+  const supabase = await createSupabaseServer();
 
   const {
     data: { user },
@@ -37,7 +37,7 @@ export async function GET() {
 
 // ─── PATCH ────────────────────────────────────────────────────────────────────
 export async function PATCH(req: NextRequest) {
-  const supabase = createSupabaseServer();
+  const supabase = await createSupabaseServer();
 
   const {
     data: { user },
