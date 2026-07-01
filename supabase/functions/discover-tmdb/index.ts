@@ -12,8 +12,8 @@ const TMDB_API_KEY = Deno.env.get("TMDB_API_KEY")!;
 
 // ─── CONFIG ────────────────────────────────────────────────────────────────
 const BATCH_SIZE = 5;
-const DISCOVER_LIMIT = 50; // Default target item BARU yang di-discover
-const MAX_PAGES_PER_RUN = 10; // Batas max page per run agar tidak timeout
+const DISCOVER_LIMIT = 50;
+const MAX_PAGES_PER_RUN = 10;
 const RETRY_LIMIT = 3;
 const RETRY_DELAY_MS = 500;
 const EPISODE_DELAY_MS = 250;
@@ -30,6 +30,8 @@ const VALID_MODES = [
   "movie_trending",
   "tv_popular",
   "tv_trending",
+  "movie_id",
+  "tv_id",
 ] as const;
 
 type Mode = (typeof VALID_MODES)[number];
@@ -238,7 +240,6 @@ async function upsertPlatforms(
 }
 
 // ─── CHECK EXISTING IN BULK ────────────────────────────────────────────────
-// Cek tmdb_id mana saja dari satu page yang sudah ada di DB — satu query saja.
 
 async function filterNewItems(
   items: any[],
@@ -759,10 +760,69 @@ async function syncSeries(
   return detailEn.name;
 }
 
+// ─── DIRECT SYNC BY TMDB ID(s) ─────────────────────────────────────────────
+// Digunakan saat mode=movie_id atau mode=tv_id.
+// Query param: tmdb_ids=550,680,27205 (comma-separated, max 50)
+
+async function syncByIds(
+  tmdbIds: number[],
+  isMovie: boolean,
+  platformMap: Record<number, any>,
+  logId: string,
+  modeParam: Mode,
+): Promise<Response> {
+  const processFn = isMovie ? syncMovie : syncSeries;
+  const label = isMovie ? "movie" : "tv";
+
+  const succeeded: string[] = [];
+  const failedIds: string[] = [];
+
+  for (const tmdbId of tmdbIds) {
+    try {
+      console.log(`[direct-sync] Processing ${label} tmdb_id=${tmdbId}`);
+      const title = await processFn({ id: tmdbId }, platformMap);
+      if (title) succeeded.push(title);
+    } catch (err) {
+      console.error(
+        `[direct-sync] Failed ${label} tmdb_id=${tmdbId}:`,
+        (err as Error).message,
+      );
+      failedIds.push(String(tmdbId));
+    }
+  }
+
+  const status =
+    failedIds.length === 0
+      ? "success"
+      : succeeded.length === 0
+        ? "error"
+        : "partial";
+
+  await supabase.from("sync_logs").upsert({
+    id: logId,
+    sync_type: `discover_tmdb_${modeParam}`,
+    status,
+    movies_processed: succeeded.length,
+    error_message:
+      failedIds.length > 0 ? `Failed IDs: ${failedIds.join(", ")}` : null,
+    finished_at: new Date().toISOString(),
+  });
+
+  return new Response(
+    JSON.stringify({
+      success: failedIds.length < tmdbIds.length,
+      mode: modeParam,
+      requested: tmdbIds.length,
+      succeeded: succeeded.length,
+      failed: failedIds.length,
+      failed_ids: failedIds,
+      synced_titles: succeeded,
+    }),
+    { headers: { "Content-Type": "application/json" } },
+  );
+}
+
 // ─── MAIN DISCOVERY LOOP ───────────────────────────────────────────────────
-// Strategi: fetch page → filter yang sudah ada di DB (bulk 1 query per page)
-// → proses hanya item baru → lanjut ke page berikutnya sampai quota terpenuhi.
-// Dengan cara ini, "discovered" akan benar-benar mencapai target limit.
 
 async function runDiscovery(
   endpoint: string,
@@ -779,7 +839,6 @@ async function runDiscovery(
   pagesScanned: number;
   discovered_titles: string[];
 }> {
-  // Ambil halaman terakhir dari sync_state
   const { data: stateRow } = await supabase
     .from("sync_state")
     .select("value")
@@ -802,7 +861,6 @@ async function runDiscovery(
   );
 
   while (discovered < limit && pagesScanned < MAX_PAGES_PER_RUN) {
-    // Fetch satu page dari TMDB
     let pageData: any;
     try {
       pageData = await tmdbFetch(endpoint, {
@@ -828,11 +886,9 @@ async function runDiscovery(
 
     pagesScanned++;
 
-    // ── Filter bulk: cek mana yang sudah ada di DB (1 query per page) ──
     const newItems = await filterNewItems(results, table);
     skipped += results.length - newItems.length;
 
-    // ── Proses hanya item baru, ambil sebatas sisa quota ──
     const toProcess = newItems.slice(0, limit - discovered);
 
     if (toProcess.length > 0) {
@@ -871,7 +927,6 @@ async function runDiscovery(
     if (discovered < limit) await sleep(PAGE_SLEEP_MS);
   }
 
-  // Simpan state: jika sudah halaman terakhir, reset ke 0 agar next run mulai dari awal
   const nextStateValue = reachedLastPage ? "0" : String(lastCompletedPage);
   await supabase.from("sync_state").upsert(
     {
@@ -922,16 +977,47 @@ serve(async (req) => {
 
     const platformMap = await getPlatformMap();
 
-    // ── Mode config ──
+    // ── Direct sync by specific TMDB ID(s) ──────────────────────────────────
+    if (modeParam === "movie_id" || modeParam === "tv_id") {
+      const idsParam = url.searchParams.get("tmdb_ids") ?? "";
+      const tmdbIds = idsParam
+        .split(",")
+        .map((s) => parseInt(s.trim(), 10))
+        .filter((n) => !isNaN(n) && n > 0)
+        .slice(0, 50); // hard cap: 50 IDs per request
+
+      if (tmdbIds.length === 0) {
+        return new Response(
+          JSON.stringify({
+            error:
+              "tmdb_ids param is required for this mode. Example: ?mode=movie_id&tmdb_ids=550,680",
+          }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        );
+      }
+
+      return await syncByIds(
+        tmdbIds,
+        modeParam === "movie_id",
+        platformMap,
+        logId,
+        modeParam,
+      );
+    }
+
+    // ── Discovery loop modes ─────────────────────────────────────────────────
     type ModeConfig = {
       endpoint: string;
       params: Record<string, string>;
       stateKey: string;
       table: "movies" | "tv_series";
-      processFn: (item: any, pm: Record<number, any>) => Promise<void>;
+      processFn: (item: any, pm: Record<number, any>) => Promise<string>;
     };
 
-    const modeConfig: Record<Mode, ModeConfig> = {
+    const modeConfig: Record<
+      Exclude<Mode, "movie_id" | "tv_id">,
+      ModeConfig
+    > = {
       movie: {
         endpoint: "/discover/movie",
         params: { sort_by: "popularity.desc", "vote_count.gte": "10" },
@@ -977,7 +1063,7 @@ serve(async (req) => {
     };
 
     const { endpoint, params, stateKey, table, processFn } =
-      modeConfig[modeParam];
+      modeConfig[modeParam as Exclude<Mode, "movie_id" | "tv_id">];
 
     const { discovered, skipped, failed, pagesScanned, discovered_titles } =
       await runDiscovery(

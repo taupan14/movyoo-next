@@ -4,10 +4,9 @@ import { useEffect, useRef } from "react";
 
 interface AdUnitProps {
   scriptSrc: string;
-  containerId?: string; // untuk Native Banner yang butuh div placeholder
+  containerId?: string;
   minHeight?: number;
   className?: string;
-  /** Cegah inject ulang saat re-render (default: true) */
   once?: boolean;
 }
 
@@ -21,7 +20,11 @@ export default function AdUnit({
   const containerRef = useRef<HTMLDivElement>(null);
   const injectedRef = useRef(false);
 
+  // Adsterra blocks requests from localhost (CORS) — skip in dev
+  const isDev = process.env.NODE_ENV === "development";
+
   useEffect(() => {
+    if (isDev) return;
     if (!containerRef.current || !scriptSrc) return;
     if (once && injectedRef.current) return;
 
@@ -32,7 +35,17 @@ export default function AdUnit({
     script.src = scriptSrc;
     script.async = true;
     script.setAttribute("data-cfasync", "false");
-    container.appendChild(script);
+
+    script.onerror = () => {
+      console.warn("[AdUnit] Failed to load ad script:", scriptSrc);
+      injectedRef.current = false;
+    };
+
+    try {
+      container.appendChild(script);
+    } catch (err) {
+      console.warn("[AdUnit] Ad initialization error:", err);
+    }
 
     return () => {
       if (!once) {
@@ -40,7 +53,30 @@ export default function AdUnit({
         injectedRef.current = false;
       }
     };
-  }, [scriptSrc, once]);
+  }, [scriptSrc, once, isDev]);
+
+  // Di dev, render placeholder supaya layout tidak collapse
+  if (isDev) {
+    return (
+      <div
+        style={{
+          minHeight: minHeight || 60,
+          overflow: "hidden",
+          background: "rgba(255,255,255,0.05)",
+          border: "1px dashed rgba(255,255,255,0.15)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: 11,
+          color: "rgba(255,255,255,0.3)",
+          borderRadius: 4,
+        }}
+        aria-label="Ad placeholder (dev only)"
+      >
+        Ad · dev only
+      </div>
+    );
+  }
 
   return (
     <div

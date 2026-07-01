@@ -865,6 +865,14 @@ export default function SwipePage() {
     }
   }, [feedReady, isGuest, locale]);
 
+  // ✅ FIX 2 (BARU): Reset transform card setiap kali card berganti
+  useEffect(() => {
+    if (cardRef.current) {
+      cardRef.current.style.transition = "none";
+      cardRef.current.style.transform = "translateX(0) rotate(0deg)";
+    }
+  }, [currentIdx]);
+
   // ── Fetch feed ─────────────────────────────────────────────────────────
   const fetchFeed = useCallback(
     async (append = false) => {
@@ -965,6 +973,7 @@ export default function SwipePage() {
   );
 
   // ── Process swipe ──────────────────────────────────────────────────────
+  // ── Process swipe ──────────────────────────────────────────────────────
   const processSwipe = useCallback(
     async (direction: "left" | "right") => {
       if (isAnimating || !currentItem) return;
@@ -982,6 +991,14 @@ export default function SwipePage() {
         setTimeout(() => setShowMatchToast(false), 1400);
       }
 
+      // ✅ FIX 1: Animasikan card terbang keluar dulu
+      if (cardRef.current) {
+        const flyX = direction === "right" ? "150%" : "-150%";
+        const flyRot = direction === "right" ? "30deg" : "-30deg";
+        cardRef.current.style.transition = "transform 0.28s ease-in";
+        cardRef.current.style.transform = `translateX(${flyX}) rotate(${flyRot})`;
+      }
+
       setTimeout(() => {
         if (direction === "right") {
           setLiked((prev) => [...prev, item]);
@@ -991,8 +1008,6 @@ export default function SwipePage() {
         const nextTotal = totalSwiped + 1;
         setTotalSwiped(nextTotal);
 
-        // Untuk guest: endless (queue habis baru results)
-        // Untuk login: sesi SESSION_GOAL swipe
         const shouldEnd = isGuest
           ? currentIdx + 1 >= queue.length
           : nextTotal >= SESSION_GOAL;
@@ -1006,7 +1021,6 @@ export default function SwipePage() {
         setSwipeDir(null);
         setIsAnimating(false);
 
-        // Simpan ke DB hanya jika login
         if (user) {
           fetch("/api/swipe-pick/swipe", {
             method: "POST",

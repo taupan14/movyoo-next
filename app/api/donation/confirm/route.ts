@@ -1,7 +1,7 @@
 /**
  * POST /api/donation/confirm
  *
- * Dipanggil dari frontend ketika user sudah login dan mengklaim donasi.
+ * Dipanggil dari frontend ketika user sudah login dan mengklaim traktiran.
  *
  * Dua skenario:
  *
@@ -9,15 +9,16 @@
  *    → Webhook sudah catat donasi, tinggal link ke user_id
  *    → Function claim_donation_by_user() akan match by email
  *
- * B) Email berbeda, atau donasi sebelum punya akun Movyoo
+ * B) Email berbeda, atau traktiran sebelum punya akun Movyoo
  *    → Honor system: user klaim manual
- *    → Tetap dicatat, verified = FALSE
+ *    → Tetap dicatat, verified = FALSE, tier tidak berubah dulu
  *
- * Body (opsional): { donor_name?: string, saweria_ref?: string }
+ * Body (opsional): { donor_name?: string }
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabase-server";
+import { type DonationTier, DONATION_TIERS } from "@/lib/ads/config";
 
 export async function POST(req: NextRequest) {
   try {
@@ -35,7 +36,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Coba claim donasi yang masuk via webhook (match by email)
+    // Coba claim traktiran yang masuk via webhook (match by email)
     const { data, error } = await supabase.rpc("claim_donation_by_user", {
       p_user_id: user.id,
       p_email: user.email ?? "",
@@ -52,10 +53,11 @@ export async function POST(req: NextRequest) {
     const result = data as {
       status: "ok" | "not_found";
       donation_id: number | null;
+      tier: DonationTier;
     };
 
     if (result.status === "not_found") {
-      // Tidak ada donasi terverifikasi dengan email ini
+      // Tidak ada traktiran terverifikasi dengan email ini
       // Fallback: honor system — langsung catat sebagai unverified
       const body = await req.json().catch(() => ({}));
       const { error: fallbackError } = await supabase.rpc("confirm_donation", {
@@ -74,16 +76,24 @@ export async function POST(req: NextRequest) {
       }
 
       return NextResponse.json({
-        success: true,
+        success: false,
         verified: false,
-        message: "Klaim diterima. Donasi akan diverifikasi oleh tim kami.",
+        tier: null,
+        message:
+          "Oops, klaim belum ditemukan. Traktiran akan diverifikasi oleh tim kami dalam 1×24 jam.",
       });
     }
+
+    const tierInfo = DONATION_TIERS.find((t) => t.tier === result.tier);
 
     return NextResponse.json({
       success: true,
       verified: true,
-      message: "Donasi terverifikasi! Iklan telah dimatikan.",
+      tier: result.tier,
+      tierLabel: tierInfo ? `${tierInfo.emoji} ${tierInfo.label}` : null,
+      message: tierInfo
+        ? `Traktiran terverifikasi! Kamu sekarang di tier ${tierInfo.emoji} ${tierInfo.label}.`
+        : "Traktiran terverifikasi! Iklan telah dimatikan.",
     });
   } catch (err) {
     console.error("[/api/donation/confirm] Unexpected error:", err);

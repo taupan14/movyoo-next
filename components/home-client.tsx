@@ -223,7 +223,7 @@ export function HomeClient() {
     {
       href: "/swipe",
       icon: Zap,
-      label: t("nav_swipe"),
+      label: "Swipe",
       color: "from-amber-500 to-orange-600",
     },
     {
@@ -235,7 +235,7 @@ export function HomeClient() {
     {
       href: "/quiz",
       icon: Flame,
-      label: t("nav_quiz"),
+      label: "Trivia",
       color: "from-sky-500 to-blue-600",
     },
   ];

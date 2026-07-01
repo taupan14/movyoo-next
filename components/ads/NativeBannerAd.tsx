@@ -1,4 +1,8 @@
+// components/ads/NativeBannerAd.tsx
+"use client";
+
 import { ADS_CONFIG } from "@/lib/ads/config";
+import { useAdSettings } from "@/hooks/use-ad-settings";
 import AdUnit from "./AdUnit";
 
 interface NativeBannerAdProps {
@@ -7,18 +11,16 @@ interface NativeBannerAdProps {
 
 /**
  * Native Banner Ad dari Adsterra.
- *
- * Penempatan yang direkomendasikan:
- * - Di antara section konten (setelah hero, sebelum list film)
- * - Di tengah halaman explore / browse
- * - Di bawah detail film sebelum "Film Terkait"
- *
- * Hindari: di atas fold (above-the-fold), di dalam modal, di antara item list yang rapat.
+ * Tier-aware: hanya render jika user bukan Silver/Gold/HoF.
+ * Data ad flags sudah final dari server (AdsProvider) — tidak ada
+ * loading state / layout shift lagi.
  */
 export default function NativeBannerAd({
   className = "",
 }: NativeBannerAdProps) {
-  if (!ADS_CONFIG.enabled || !ADS_CONFIG.scripts.nativeBanner) return null;
+  const { showNativeBanner } = useAdSettings();
+
+  if (!showNativeBanner || !ADS_CONFIG.scripts.nativeBanner) return null;
 
   return (
     <div className={`my-6 ${className}`}>

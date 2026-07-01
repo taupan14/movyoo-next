@@ -16,6 +16,7 @@ import {
   CalendarClock,
   Clock,
   Gift, // ← tambah ini
+  Clapperboard,
   Globe,
   Menu,
   X,
@@ -34,6 +35,7 @@ const poppins = Poppins({
 const navItems = [
   { href: "/", icon: Home, labelKey: "nav_home" as const },
   { href: "/explore", icon: Compass, labelKey: "nav_explore" as const },
+  { href: "/articles", icon: Clapperboard, labelKey: "nav_articles" as const },
   { href: "/mood", icon: Brain, labelKey: "nav_mood" as const },
   { href: "/swipe", icon: Zap, labelKey: "nav_swipe" as const },
   { href: "/quiz", icon: Flame, labelKey: "nav_quiz" as const },

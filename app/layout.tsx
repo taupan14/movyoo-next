@@ -7,6 +7,8 @@ import { Suspense } from "react";
 import { Footer } from "@/components/footer";
 import PopunderAd from "@/components/ads/PopunderAd";
 import SocialBarAd from "@/components/ads/SocialBarAd";
+import { AdsProvider } from "@/components/ads/AdsProvider";
+import { getInitialAdState } from "@/lib/ads/get-ad-flags";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -73,33 +75,43 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  // Fetch tier + resolve ad flags sekali di server menggunakan cookies.
+  // Tidak ada round-trip tambahan dari browser — children langsung
+  // menerima data final lewat AdsProvider context.
+  const initialAdState = await getInitialAdState();
+
   return (
     <html lang="id">
       <body className={inter.className}>
         <Providers>
-          {children}
-          <Suspense>
-            <PageLoader />
-          </Suspense>
+          <AdsProvider initialState={initialAdState}>
+            {children}
+            <Suspense>
+              <PageLoader />
+            </Suspense>
 
-          {/*
-           * === AD PLACEMENT ===
-           *
-           * PopunderAd  — inject 1x ke <head>, tidak render visual apapun.
-           *               Popunder muncul di tab/window baru saat user klik pertama.
-           *
-           * SocialBarAd — floating bar di tepi layar (posisi diatur Adsterra).
-           *               Letakkan di luar semua konten agar tidak mempengaruhi layout.
-           */}
-          <PopunderAd />
-          <SocialBarAd />
+            {/*
+             * === AD PLACEMENT ===
+             *
+             * PopunderAd  — inject 1x ke <head>, tidak render visual apapun.
+             *               Popunder muncul di tab/window baru saat user klik pertama.
+             *
+             * SocialBarAd — floating bar di tepi layar (posisi diatur Adsterra).
+             *               Letakkan di luar semua konten agar tidak mempengaruhi layout.
+             *
+             * Keduanya sekarang baca ad flags dari AdsProvider context
+             * (di-resolve di server), bukan fetch Supabase client-side.
+             */}
+            <PopunderAd />
+            <SocialBarAd />
 
-          <Footer />
+            <Footer />
+          </AdsProvider>
         </Providers>
       </body>
     </html>

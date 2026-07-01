@@ -1,10 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import Image from "next/image";
-import { Film, Target, Users, Zap, ExternalLink } from "lucide-react";
-
-const SAWERIA_QR_URL = "/qr-saweria.png";
-const SAWERIA_URL = "https://saweria.co/movyoo";
+import { Film, Target, Users, Zap } from "lucide-react";
+import { AboutDonationSection } from "./about-donation-section";
 
 export const metadata: Metadata = {
   title: "Tentang Kami — Movyoo",
@@ -64,38 +61,8 @@ export default function AboutPage() {
           </p>
         </div>
 
-        <div className="p-4 flex flex-col items-center gap-4 text-center mb-10">
-          <div className="p-3 bg-white rounded-xl">
-            <Image
-              src={SAWERIA_QR_URL}
-              alt="QR Saweria Movyoo"
-              width={230}
-              height={230}
-              className="rounded-lg"
-            />
-          </div>
-
-          <p className="text-[11px] text-white/35">
-            Scan QR di atas atau klik tombol untuk donasi via Saweria
-          </p>
-
-          <a
-            href={SAWERIA_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl gradient-primary text-white text-sm font-medium hover:opacity-90 transition-opacity"
-          >
-            Donasi via Saweria
-            <ExternalLink className="w-3.5 h-3.5" />
-          </a>
-
-          <button
-            // onClick={() => setStep("confirm")}
-            className="w-full py-2.5 rounded-xl border border-white/10 text-white/60 text-sm hover:border-white/20 hover:text-white/80 transition-colors"
-          >
-            Sudah donasi? Klaim bebas iklan →
-          </button>
-        </div>
+        {/* Donation Section — client island */}
+        <AboutDonationSection />
 
         {/* Story */}
         <section className="mb-12 space-y-4">

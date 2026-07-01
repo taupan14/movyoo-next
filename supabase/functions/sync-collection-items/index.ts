@@ -30,7 +30,6 @@ interface TvSeriesRow {
   first_air_date: string | null;
 }
 
-// Target table: collection_movies (sistem), bukan collection_items (user)
 interface CollectionMovieInsert {
   collection_id: number;
   media_type: "movie" | "tv";
@@ -50,8 +49,50 @@ interface CollectionResult {
   error?: string;
 }
 
+// ─── Collection config ────────────────────────────────────────────────────────
+
+const TITLE_PATTERNS: Record<string, RegExp> = {
+  star_wars: /\bstar\s+wars\b/i,
+
+  harry_potter:
+    /\bharry\s+potter\b|\bfantastic\s+beasts\b|\bwizarding\s+world\b/i,
+
+  mcu: /\bavengers\b|\biron\s+man\b|\bcaptain\s+america\b|\bblack\s+panther\b|\bthor\b|\bguardians\s+of\s+the\s+galaxy\b|\bdoctor\s+strange\b|\bant[\s-]man\b|\bblack\s+widow\b|\bshang[\s-]chi\b|\betemals\b|\bspider[\s-]man\b|\bwandavision\b|\bhawkeye\b|\bms\.?\s+marvel\b|\bshe[\s-]hulk\b|\bmoon\s+knight\b|\bsecret\s+invasion\b|\bloki\b|\bthe\s+marvels\b/i,
+
+  // key lama 'dc' tetap ada untuk backward compat, 'dc_comics' alias baru
+  dc: /\bsuperman\b|\bbatman\b|\bwonder\s+woman\b|\baquaman\b|\bsuicide\s+squad\b|\bbirds\s+of\s+prey\b|\bshazam\b|\bblack\s+adam\b|\bthe\s+flash\b|\bblue\s+beetle\b|\bjoker\b|\bpeacemaker\b|\bgreen\s+lantern\b/i,
+
+  dc_comics:
+    /\bsuperman\b|\bbatman\b|\bwonder\s+woman\b|\baquaman\b|\bsuicide\s+squad\b|\bbirds\s+of\s+prey\b|\bshazam\b|\bblack\s+adam\b|\bthe\s+flash\b|\bblue\s+beetle\b|\bjoker\b|\bpeacemaker\b|\bgreen\s+lantern\b/i,
+
+  plot_twist:
+    /\bfight\s+club\b|\bthe\s+sixth\s+sense\b|\busual\s+suspects\b|\bmemento\b|\bshutter\s+island\b|\bgone\s+girl\b|\bthe\s+prestige\b|\boldboy\b|\bprimer\b|\barrival\b|\bknives\s+out\b|\bparasite\b|\bget\s+out\b|\bseventh\b|\bidentity\b|\bcabin\s+in\s+the\s+woods\b|\bmullholland\s+drive\b|\bthe\s+others\b|\bbirds?\s+box\b|\bunbreakable\b/i,
+};
+
+// ✅ Value sekarang string[] untuk support multiple names (e.g. Mo Brothers)
+const DIRECTOR_KEYS: Record<string, string[]> = {
+  nolan: ["Christopher Nolan"],
+  spielberg: ["Steven Spielberg"],
+  miyazaki: ["Hayao Miyazaki"],
+  scorsese: ["Martin Scorsese"],
+  kubrick: ["Stanley Kubrick"],
+  tarantino: ["Quentin Tarantino"],
+  joko_anwar: ["Joko Anwar"],
+  mo_brothers: ["Timo Tjahjanto", "Kimo Stamboel"],
+};
+
+const GENRE_KEYS: Record<string, { genreSlug: string; lang?: string }> = {
+  indonesia_action: { genreSlug: "action", lang: "id" },
+  anime_shounen: { genreSlug: "animation", lang: "ja" },
+};
+
+const COMPANY_KEYS: Record<string, number> = {
+  ghibli: 65,
+};
+
+const AWARDS_KEYS = ["oscar_bp", "palme_dor"];
+
 // ─── Pagination fetch helper ──────────────────────────────────────────────────
-// Supabase default limit = 1000. Fetch semua rows dengan pagination.
 
 async function fetchAll<T>(
   table: string,
@@ -77,46 +118,14 @@ async function fetchAll<T>(
     const rows = (data ?? []) as T[];
     all.push(...rows);
 
-    if (rows.length < PAGE) break; // ultima pagina
+    if (rows.length < PAGE) break;
     offset += PAGE;
   }
 
   return all;
 }
 
-// ─── Title-based matchers ─────────────────────────────────────────────────────
-
-const TITLE_PATTERNS: Record<string, RegExp> = {
-  star_wars: /\bstar\s+wars\b/i,
-
-  harry_potter:
-    /\bharry\s+potter\b|\bfantastic\s+beasts\b|\bwizarding\s+world\b/i,
-
-  mcu: /\bavengers\b|\biron\s+man\b|\bcaptain\s+america\b|\bblack\s+panther\b|\bthor\b|\bguardians\s+of\s+the\s+galaxy\b|\bdoctor\s+strange\b|\bant[\s-]man\b|\bblack\s+widow\b|\bshang[\s-]chi\b|\betemals\b|\bspider[\s-]man\b|\bwandavision\b|\bhawkeye\b|\bms\.?\s+marvel\b|\bshe[\s-]hulk\b|\bmoon\s+knight\b|\bsecret\s+invasion\b|\bloki\b|\bthe\s+marvels\b/i,
-
-  dc: /\bsuperman\b|\bbatman\b|\bwonder\s+woman\b|\baquaman\b|\bsuicide\s+squad\b|\bbirds\s+of\s+prey\b|\bshazam\b|\bblack\s+adam\b|\bthe\s+flash\b|\bblue\s+beetle\b|\bjoker\b|\bpeacemaker\b|\bgreen\s+lantern\b/i,
-};
-
-const DIRECTOR_KEYS: Record<string, string> = {
-  nolan: "Christopher Nolan",
-  spielberg: "Steven Spielberg",
-  miyazaki: "Hayao Miyazaki",
-  scorsese: "Martin Scorsese",
-  kubrick: "Stanley Kubrick",
-};
-
-const GENRE_KEYS: Record<string, { genreSlug: string; lang?: string }> = {
-  // kosong — Ghibli dipindah ke COMPANY_KEYS
-};
-
-// Match berdasarkan production_companies.id (dari tabel movie_companies)
-const COMPANY_KEYS: Record<string, number> = {
-  ghibli: 65, // Studio Ghibli
-};
-
-const AWARDS_KEYS = ["oscar_bp", "palme_dor"];
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Title-based matcher ──────────────────────────────────────────────────────
 
 function matchTitle(
   pattern: RegExp,
@@ -127,12 +136,11 @@ function matchTitle(
 }
 
 // ─── Director: fetch matching IDs from crew tables ────────────────────────────
+// ✅ Menerima string[] — union dari semua nama yang cocok
 
 async function fetchMovieIdsByDirector(
-  directorName: string,
+  directorNames: string[],
 ): Promise<Set<number>> {
-  const lower = directorName.toLowerCase();
-
   const rows = await fetchAll<{ movie_id: number; name: string }>(
     "movie_crew",
     "movie_id, name",
@@ -141,21 +149,21 @@ async function fetchMovieIdsByDirector(
 
   const ids = new Set<number>();
   for (const row of rows) {
-    if ((row.name ?? "").toLowerCase().includes(lower)) {
-      ids.add(Number(row.movie_id)); // eksplisit Number() untuk pastikan tipe
+    const lower = (row.name ?? "").toLowerCase();
+    if (directorNames.some((n) => lower.includes(n.toLowerCase()))) {
+      ids.add(Number(row.movie_id));
     }
   }
+
   console.log(
-    `[crew] "${directorName}" → ${ids.size} movie_ids dari ${rows.length} directors`,
+    `[crew] ${JSON.stringify(directorNames)} → ${ids.size} movie_ids dari ${rows.length} rows`,
   );
   return ids;
 }
 
 async function fetchTvIdsByDirector(
-  directorName: string,
+  directorNames: string[],
 ): Promise<Set<number>> {
-  const lower = directorName.toLowerCase();
-
   const rows = await fetchAll<{ series_id: number | string; name: string }>(
     "tv_crew",
     "series_id, name",
@@ -164,10 +172,15 @@ async function fetchTvIdsByDirector(
 
   const ids = new Set<number>();
   for (const row of rows) {
-    if ((row.name ?? "").toLowerCase().includes(lower)) {
+    const lower = (row.name ?? "").toLowerCase();
+    if (directorNames.some((n) => lower.includes(n.toLowerCase()))) {
       ids.add(Number(row.series_id));
     }
   }
+
+  console.log(
+    `[crew] ${JSON.stringify(directorNames)} → ${ids.size} series_ids dari ${rows.length} rows`,
+  );
   return ids;
 }
 
@@ -229,7 +242,7 @@ async function fetchTvIdsByGenre(
   return ids;
 }
 
-// ─── Company: fetch movie IDs via movie_companies ────────────────────────────
+// ─── Company: fetch movie IDs via movie_companies ─────────────────────────────
 
 async function fetchMovieIdsByCompany(companyId: number): Promise<Set<number>> {
   const rows = await fetchAll<{ movie_id: number }>(
@@ -263,17 +276,16 @@ async function processCollection(
   let matchedTvIds: number[] = [];
 
   try {
-    // ── 1. Director ─────────────────────────────────────────────────────────
+    // ── 1. Director ──────────────────────────────────────────────────────────
     if (DIRECTOR_KEYS[collection.key]) {
-      const directorName = DIRECTOR_KEYS[collection.key];
-      result.match_strategy = `director: "${directorName}" via crew tables`;
+      const directorNames = DIRECTOR_KEYS[collection.key];
+      result.match_strategy = `director: ${JSON.stringify(directorNames)} via crew tables`;
 
       const [movieCrewIds, tvCrewIds] = await Promise.all([
-        fetchMovieIdsByDirector(directorName),
-        fetchTvIdsByDirector(directorName),
+        fetchMovieIdsByDirector(directorNames),
+        fetchTvIdsByDirector(directorNames),
       ]);
 
-      // Pastikan compare Number vs Number
       matchedMovieIds = movies
         .filter((m) => movieCrewIds.has(Number(m.id)))
         .map((m) => Number(m.id));
@@ -283,11 +295,11 @@ async function processCollection(
         .map((t) => Number(t.id));
 
       console.log(
-        `[match] "${directorName}" → movies=${matchedMovieIds.length}/${movies.length}, tv=${matchedTvIds.length}/${tvSeries.length}`,
+        `[match] ${JSON.stringify(directorNames)} → movies=${matchedMovieIds.length}, tv=${matchedTvIds.length}`,
       );
     }
 
-    // ── 2. Title pattern ────────────────────────────────────────────────────
+    // ── 2. Title pattern ─────────────────────────────────────────────────────
     else if (TITLE_PATTERNS[collection.key]) {
       const pattern = TITLE_PATTERNS[collection.key];
       result.match_strategy = `title pattern: ${pattern}`;
@@ -301,7 +313,7 @@ async function processCollection(
         .map((t) => Number(t.id));
     }
 
-    // ── 3. Genre ────────────────────────────────────────────────────────────
+    // ── 3. Genre ─────────────────────────────────────────────────────────────
     else if (GENRE_KEYS[collection.key]) {
       const { genreSlug, lang } = GENRE_KEYS[collection.key];
       result.match_strategy = `genre: "${genreSlug}"${lang ? ` + lang=${lang}` : ""}`;
@@ -320,30 +332,29 @@ async function processCollection(
         .map((t) => Number(t.id));
     }
 
-    // ── 4. Company (e.g. Studio Ghibli) ────────────────────────────────────
+    // ── 4. Company ───────────────────────────────────────────────────────────
     else if (COMPANY_KEYS[collection.key] !== undefined) {
       const companyId = COMPANY_KEYS[collection.key];
       result.match_strategy = `production company id=${companyId} via movie_companies`;
 
       const movieCompanyIds = await fetchMovieIdsByCompany(companyId);
-      // TV series tidak punya tabel tv_companies, skip
       matchedMovieIds = movies
         .filter((m) => movieCompanyIds.has(Number(m.id)))
         .map((m) => Number(m.id));
       matchedTvIds = [];
     }
 
-    // ── 5. Awards ───────────────────────────────────────────────────────────
+    // ── 5. Awards — manual only ───────────────────────────────────────────────
     else if (AWARDS_KEYS.includes(collection.key)) {
       result.match_strategy = "manual — no auto-match available";
       result.not_found.push(
         `Collection "${collection.name}" memerlukan data manual. ` +
-          `Insert ke collection_items secara manual dengan movie_id atau series_id yang sesuai.`,
+          `Insert ke collection_movies secara manual dengan movie_id atau series_id yang sesuai.`,
       );
       return result;
     }
 
-    // ── 6. Unknown ──────────────────────────────────────────────────────────
+    // ── 6. No config ──────────────────────────────────────────────────────────
     else {
       result.match_strategy = "no config";
       result.error = `No matcher config for key="${collection.key}"`;
@@ -363,7 +374,7 @@ async function processCollection(
     return result;
   }
 
-  // ── Check existing items di collection_movies ─────────────────────────────
+  // ── Check existing items ──────────────────────────────────────────────────
   const { data: existingItems } = await supabase
     .from("collection_movies")
     .select("media_type, movie_id, series_id")
@@ -415,7 +426,7 @@ async function processCollection(
     return result;
   }
 
-  // ── Batch insert ke collection_movies ─────────────────────────────────────
+  // ── Batch insert ──────────────────────────────────────────────────────────
   const BATCH = 100;
   for (let i = 0; i < toInsert.length; i += BATCH) {
     const chunk = toInsert.slice(i, i + BATCH);
@@ -493,13 +504,14 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    // ── Dry run — tampilkan plan tanpa eksekusi ───────────────────────────────
     if (dryRun) {
       const plan = (collections as Collection[]).map((col) => ({
         collection_id: col.id,
         collection_key: col.key,
         collection_name: col.name,
         will_use: DIRECTOR_KEYS[col.key]
-          ? `director: "${DIRECTOR_KEYS[col.key]}" via movie_crew/tv_crew`
+          ? `director: ${JSON.stringify(DIRECTOR_KEYS[col.key])} via movie_crew/tv_crew`
           : TITLE_PATTERNS[col.key]
             ? `title pattern`
             : GENRE_KEYS[col.key]
@@ -518,7 +530,7 @@ Deno.serve(async (req: Request) => {
 
     console.log(`[sync] Starting. collections=${collections.length}`);
 
-    // Pre-fetch semua movies & tv_series dengan pagination
+    // Pre-fetch semua movies & tv_series
     const [movies, tvSeries] = await Promise.all([
       fetchAll<MovieRow>("movies", "id, title, original_title, release_date"),
       fetchAll<TvSeriesRow>(

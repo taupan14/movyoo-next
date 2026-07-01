@@ -1003,7 +1003,7 @@ export default function ProfilePage() {
           <div className="absolute -top-10 right-0 w-60 h-60 rounded-full bg-violet-500/8 blur-[60px]" />
         </div>
 
-        <div className="relative max-w-4xl mx-auto px-4 lg:px-6 pt-8 pb-6">
+        <div className="relative max-w-5xl mx-auto px-4 lg:px-6 pt-8 pb-6">
           {/* Top row: avatar + info + logout */}
           <div className="flex gap-4 sm:gap-6 items-start mb-6">
             <AvatarUpload
@@ -1190,7 +1190,7 @@ export default function ProfilePage() {
                   Achievement Progress
                 </span>
                 <Link
-                  href="#"
+                  href="/achievements"
                   className="text-xs text-primary hover:underline flex items-center gap-1"
                 >
                   Lihat semua <ChevronRight className="w-3 h-3" />
@@ -1210,7 +1210,7 @@ export default function ProfilePage() {
       </div>
 
       {/* ── Tabs + Content ───────────────────────────────────────────────────── */}
-      <div className="max-w-4xl mx-auto px-4 lg:px-6">
+      <div className="max-w-5xl mx-auto px-4 lg:px-6">
         {/* Tab bar + search */}
         <div className="flex items-center gap-2 mb-5 sticky top-14 lg:top-0 z-30 py-2 bg-background/80 backdrop-blur-xl">
           <div className="flex gap-1 p-1 rounded-xl bg-white/[0.04] border border-white/8 flex-1">

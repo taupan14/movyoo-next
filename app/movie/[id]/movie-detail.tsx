@@ -1874,6 +1874,8 @@ export default function MovieDetailClient() {
           </p>
         </section>
 
+        <NativeBannerAd className="px-4" />
+
         {/* ============================================================ */}
         {/*  4a. FILM SCORES                                               */}
         {/* ============================================================ */}
@@ -1937,7 +1939,10 @@ export default function MovieDetailClient() {
           </div>
         </section>
 
-        <NativeBannerAd className="px-4" />
+        {/* ============================================================ */}
+        {/*  3. QUICK DECISION — Community Vote                           */}
+        {/* ============================================================ */}
+        <QuickDecisionCard movieId={movieId} locale={locale} t={t} />
 
         {/* ============================================================ */}
         {/*  6. TRAILER                                                    */}
@@ -1975,11 +1980,6 @@ export default function MovieDetailClient() {
             </div>
           </section>
         )}
-
-        {/* ============================================================ */}
-        {/*  3. QUICK DECISION — Community Vote                           */}
-        {/* ============================================================ */}
-        <QuickDecisionCard movieId={movieId} locale={locale} t={t} />
 
         {/* ============================================================ */}
         {/*  7. CAST                                                       */}

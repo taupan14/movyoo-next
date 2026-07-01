@@ -3042,6 +3042,11 @@ function ExploreContent() {
         <h1 className="text-2xl lg:text-3xl font-bold text-gradient">
           {locale === "id" ? "Jelajahi" : "Explore"}
         </h1>
+        <p className="text-sm text-muted-foreground">
+          {locale === "id"
+            ? "Jelajahi Ribuan Film dan Series, temukan favoritmu ⭐"
+            : "Explore thousands of movies and series, and find your favorites ⭐"}
+        </p>
       </div>
       <div className="px-4 lg:px-6 mb-5">
         <div className="inline-flex p-1 rounded-xl glass-borderless">
