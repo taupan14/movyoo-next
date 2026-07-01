@@ -159,7 +159,8 @@ function ArticleCardSkeleton() {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 export function ArticlesClient() {
-  const { locale } = useI18n();
+  const { locs } = useI18n();
+  const locale = locs || "id";
 
   const [articles, setArticles] = useState<ArticleSummary[]>([]);
   const [loading, setLoading] = useState(true);
