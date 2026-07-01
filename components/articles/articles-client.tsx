@@ -159,8 +159,8 @@ function ArticleCardSkeleton() {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 export function ArticlesClient() {
-  const { locs } = useI18n();
-  const locale = locs || "id";
+  const { locale } = useI18n();
+  const safeLang = locale || "id";
 
   const [articles, setArticles] = useState<ArticleSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -183,7 +183,7 @@ export function ArticlesClient() {
       else setLoadingMore(true);
 
       const params = new URLSearchParams({
-        lang: locale,
+        lang: safeLang,
         page: String(p),
         limit: "18",
       });
@@ -206,12 +206,12 @@ export function ArticlesClient() {
         setLoadingMore(false);
       }
     },
-    [locale],
+    [safeLang],
   );
 
   useEffect(() => {
     fetchArticles(1, topicFilter, search, true);
-  }, [topicFilter, search, locale, fetchArticles]);
+  }, [topicFilter, search, safeLang, fetchArticles]);
 
   function handleSearch(e: React.FormEvent) {
     e.preventDefault();
@@ -225,12 +225,12 @@ export function ArticlesClient() {
         <div>
           <div className="flex flex-col gap-1 mb-6">
             <h1 className="text-2xl lg:text-3xl font-bold text-gradient">
-              {locale === "id"
+              {safeLang === "id"
                 ? "Artikel Film & Serial"
                 : "Film & Series Articles"}
             </h1>
             <p className="text-sm text-muted-foreground">
-              {locale === "id"
+              {safeLang === "id"
                 ? "Panduan nonton, rekomendasi, dan ulasan terlengkap"
                 : "The most comprehensive viewing guide, recommendations, and reviews"}
             </p>
