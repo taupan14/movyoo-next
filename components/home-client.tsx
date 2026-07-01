@@ -14,7 +14,7 @@ import {
   Star,
   Zap,
   Brain,
-  Swords,
+  Clapperboard,
   Flame,
   Bookmark,
   BookmarkCheck,
@@ -215,10 +215,10 @@ export function HomeClient() {
   // ── Quick actions ─────────────────────────────────────────────────────────────
   const quickActions = [
     {
-      href: "/mood",
-      icon: Brain,
-      label: t("nav_mood"),
-      color: "from-emerald-500 to-teal-600",
+      href: "/articles",
+      icon: Clapperboard,
+      label: t("nav_articles"),
+      color: "from-rose-500 to-red-600",
     },
     {
       href: "/swipe",
@@ -227,10 +227,10 @@ export function HomeClient() {
       color: "from-amber-500 to-orange-600",
     },
     {
-      href: "/battle",
-      icon: Swords,
-      label: t("nav_battle"),
-      color: "from-rose-500 to-red-600",
+      href: "/mood",
+      icon: Brain,
+      label: t("nav_mood"),
+      color: "from-emerald-500 to-teal-600",
     },
     {
       href: "/quiz",

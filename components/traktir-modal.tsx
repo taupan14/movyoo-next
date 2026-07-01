@@ -42,7 +42,7 @@ export function TierJourney({ currentTier, isLoading }: TierJourneyProps) {
   return (
     <div className="w-full">
       {/* Progress nodes */}
-      <div className="flex justify-center">
+      {/* <div className="flex justify-center">
         <div className="flex items-start">
           {DONATION_TIERS.map((t, i) => {
             const isActive = i <= currentIdx;
@@ -51,7 +51,6 @@ export function TierJourney({ currentTier, isLoading }: TierJourneyProps) {
 
             return (
               <div key={t.tier} className="flex items-start">
-                {/* Node */}
                 <div className="flex flex-col items-center flex-shrink-0">
                   <div
                     className={cn(
@@ -85,7 +84,6 @@ export function TierJourney({ currentTier, isLoading }: TierJourneyProps) {
                   </span>
                 </div>
 
-                {/* Connector */}
                 {!isLast && (
                   <div
                     className={cn(
@@ -98,7 +96,7 @@ export function TierJourney({ currentTier, isLoading }: TierJourneyProps) {
             );
           })}
         </div>
-      </div>
+      </div> */}
 
       {/* Detail card */}
       <div className="mt-3 rounded-xl border border-white/[0.07] bg-white/[0.02] px-3 py-2.5">
@@ -119,7 +117,7 @@ export function TierJourney({ currentTier, isLoading }: TierJourneyProps) {
               </span>{" "}
               dengan traktiran min. Rp 5.000
               <br />
-              Popunder (iklan saat klik) langsung dimatikan.
+              Popunder langsung dimatikan.
             </p>
           </div>
         ) : (
