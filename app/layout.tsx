@@ -10,6 +10,8 @@ import SocialBarAd from "@/components/ads/SocialBarAd";
 import { AdsProvider } from "@/components/ads/AdsProvider";
 import { getInitialAdState } from "@/lib/ads/get-ad-flags";
 
+export const dynamic = "force-dynamic";
+
 const inter = Inter({ subsets: ["latin"] });
 
 const BASE_URL = "https://movyoo.id"; // ← ganti dengan domain kamu
