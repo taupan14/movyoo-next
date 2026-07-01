@@ -27,7 +27,7 @@ import {
 import type { ArticleSummary, TopicType } from "@/lib/articles-db";
 import { SpiceMeterDisplay } from "./spice-meter";
 
-import NativeBannerAd from "@/components/ads/NativeBannerAd";
+// import NativeBannerAd from "@/components/ads/NativeBannerAd";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -286,7 +286,7 @@ export function ArticlesClient() {
         </div>
       </div>
 
-      <NativeBannerAd className="px-4" />
+      {/* <NativeBannerAd className="px-4" /> */}
 
       {/* ── Grid ──────────────────────────────────────────────────────────── */}
       <div className="px-4 lg:px-6 mb-6">

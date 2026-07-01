@@ -48,7 +48,7 @@ export function AboutDonationSection() {
           rel="noopener noreferrer"
           className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl gradient-primary text-white text-sm font-medium hover:opacity-90 transition-opacity"
         >
-          Donasi via Saweria
+          Traktir via Saweria
           <ExternalLink className="w-3.5 h-3.5" />
         </a>
 
