@@ -152,7 +152,7 @@ Movyoo aims to become more than just a movie database. It is built to be a compl
 
 If you like this project, don't forget to give it a ⭐ on GitHub or Buy me a coffee ☕ via Saweria
 
-<img src="./public/qr-saweria.png" alt="Saweria QR" width="25%">
+![Saweria QR](/public/smallest.png)
 
 Happy movie discovering! 🍿
 
