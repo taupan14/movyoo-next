@@ -1,4 +1,4 @@
-# 🎬 Movyoo - Your Movie Discovery
+# 🎬 Movyoo - Your Movie Discovery Platform
 
 > Discover, collect, and explore movies in a smarter and more engaging way.
 
@@ -152,7 +152,7 @@ Movyoo aims to become more than just a movie database. It is built to be a compl
 
 If you like this project, don't forget to give it a ⭐ on GitHub or Buy me a coffee ☕ via Saweria
 
-![Saweria QR](/public/qr-saweria.png)
+<img src="./public/qr-saweria.png" alt="Saweria QR" width="25%">
 
 Happy movie discovering! 🍿
 
