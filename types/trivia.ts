@@ -33,6 +33,10 @@ export interface TriviaQuestion {
   option_c: string;
   option_d: string;
   image_url: string | null;
+  option_a_image?: string | null; // ← tambahkan
+  option_b_image?: string | null; // ← tambahkan
+  option_c_image?: string | null; // ← tambahkan
+  option_d_image?: string | null;
   movie_id: number | null;
   tmdb_id: number | null;
 }
