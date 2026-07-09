@@ -14,6 +14,9 @@
 
 # production
 /build
+/.bolt
+/.github/
+/.vscode
 
 # misc
 .DS_Store
