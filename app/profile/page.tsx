@@ -32,6 +32,7 @@ import {
   Pencil,
   ListPlus,
   Award,
+  Bell,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
@@ -43,6 +44,7 @@ import { motion } from "framer-motion";
 import { CollectionStackedCover } from "@/components/profile/stacked-cover";
 import { CollectionItemsModal } from "@/components/profile/collection-items-modal";
 import type { CollectionItem } from "@/components/profile/collection-items-modal";
+import { startLoader } from "@/components/page-loader";
 
 import NativeBannerAd from "@/components/ads/NativeBannerAd";
 
@@ -1111,20 +1113,31 @@ export default function ProfilePage() {
               )}
             </div>
 
-            <button
-              onClick={() => setShowLogoutConfirm(true)}
-              disabled={loggingOut}
-              className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/5 text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
-            >
-              {loggingOut ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <LogOut className="w-3.5 h-3.5" />
-              )}
-              <span className="hidden sm:inline">
-                {loggingOut ? "Keluar..." : "Keluar"}
-              </span>
-            </button>
+            <div className="shrink-0 flex items-center gap-2">
+              <Link
+                href="/notifications"
+                onClick={() => startLoader()}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/5 text-xs text-muted-foreground hover:text-foreground hover:bg-white/8 transition-colors"
+              >
+                <Bell className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Notifikasi</span>
+              </Link>
+
+              <button
+                onClick={() => setShowLogoutConfirm(true)}
+                disabled={loggingOut}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/5 text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
+              >
+                {loggingOut ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <LogOut className="w-3.5 h-3.5" />
+                )}
+                <span className="hidden sm:inline">
+                  {loggingOut ? "Keluar..." : "Keluar"}
+                </span>
+              </button>
+            </div>
           </div>
 
           {/* Progression section */}

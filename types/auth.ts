@@ -8,6 +8,7 @@ export interface Profile {
   bio: string | null;
   created_at: string;
   updated_at: string;
+  role: "user" | "contributor" | "admin";
 }
 
 export type MediaType = "movie" | "tv";

@@ -26,6 +26,7 @@ import {
 import { useState } from "react";
 import { Poppins } from "next/font/google";
 import { startLoader } from "@/components/page-loader"; // ← sesuaikan path
+import { NotificationBell } from "@/components/notifications/notification-bell"; // ← tambah ini
 
 const poppins = Poppins({
   subsets: ["latin"],
@@ -194,6 +195,7 @@ export function Navigation() {
           >
             <Globe className="w-5 h-5" />
           </button>
+          <NotificationBell size="md" />
           <AuthButton size="md" />
         </div>
       </aside>
@@ -242,6 +244,7 @@ export function Navigation() {
             >
               <Globe className="w-4 h-4" />
             </button>
+            <NotificationBell size="sm" />
             <AuthButton size="sm" />
             <button
               onClick={() => setMobileOpen(!mobileOpen)}

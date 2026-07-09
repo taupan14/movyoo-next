@@ -112,10 +112,10 @@ export function Footer() {
                 )}
               >
                 <Coffee className="w-3.5 h-3.5 fill-rose-400 group-hover:scale-110 transition-transform" />
-                Traktir kami
-                <span className="ml-auto text-[10px] text-rose-400/50">
+                Traktir kami Kopi
+                {/* <span className="ml-auto text-[10px] text-rose-400/50">
                   · bebas iklan 🎉
-                </span>
+                </span> */}
               </button>
             </div>
 
@@ -186,7 +186,7 @@ export function Footer() {
                 className="hidden sm:flex items-center gap-1.5 text-[10px] text-primary/60 hover:text-primary/90 transition-colors border border-primary/15 hover:border-primary/30 px-2.5 py-1 rounded-full"
               >
                 <Coffee className="w-2.5 h-2.5 fill-primary/60" />
-                Traktir = bebas iklan selamanya
+                Traktir = Pengembangan Movyoo
               </button>
             </div>
           </div>

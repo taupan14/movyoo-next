@@ -3,6 +3,7 @@
 /**
  * components/articles/articles-client.tsx  — UPDATED
  * Tambahan: SpiceMeterDisplay di setiap article card
+ * Tambahan: BecomeContributorButton di header
  */
 
 import { useEffect, useState, useCallback } from "react";
@@ -26,6 +27,7 @@ import {
 } from "lucide-react";
 import type { ArticleSummary, TopicType } from "@/lib/articles-db";
 import { SpiceMeterDisplay } from "./spice-meter";
+import { BecomeContributorButton } from "./become-contributor-button"; // ← tambah ini
 
 // import NativeBannerAd from "@/components/ads/NativeBannerAd";
 
@@ -223,17 +225,22 @@ export function ArticlesClient() {
       {/* ── Header ────────────────────────────────────────────────────────── */}
       <div className="px-4 lg:px-6 mb-6">
         <div>
-          <div className="flex flex-col gap-1 mb-6">
-            <h1 className="text-2xl lg:text-3xl font-bold text-gradient">
-              {safeLang === "id"
-                ? "Artikel Film & Serial"
-                : "Film & Series Articles"}
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              {safeLang === "id"
-                ? "Panduan nonton, rekomendasi, dan ulasan terlengkap"
-                : "The most comprehensive viewing guide, recommendations, and reviews"}
-            </p>
+          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-6">
+            <div className="flex flex-col gap-1">
+              <h1 className="text-2xl lg:text-3xl font-bold text-gradient">
+                {safeLang === "id"
+                  ? "Artikel Film & Serial"
+                  : "Film & Series Articles"}
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                {safeLang === "id"
+                  ? "Panduan nonton, rekomendasi, dan ulasan terlengkap"
+                  : "The most comprehensive viewing guide, recommendations, and reviews"}
+              </p>
+            </div>
+
+            {/* Tombol jadi kontributor / kelola artikel */}
+            <BecomeContributorButton />
           </div>
 
           {/* Search */}

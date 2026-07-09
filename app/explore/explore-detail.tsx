@@ -3229,7 +3229,7 @@ function ExploreContent() {
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 animate-fade-in">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-8 gap-4 animate-fade-in">
               {tab === "movie"
                 ? displayMovies.map((item) => (
                     <ExploreCard

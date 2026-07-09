@@ -163,7 +163,87 @@ function OptionButton({
           label
         )}
       </span>
-      {text}
+      <span className="flex-1 min-w-0">{text}</span>
+    </button>
+  );
+}
+
+// ─── Option Card (grid, dipakai kalau semua opsi punya gambar/poster) ────────
+function GridOptionCard({
+  label,
+  text,
+  image,
+  selected,
+  correct,
+  revealed,
+  eliminated,
+  onClick,
+}: {
+  label: AnswerOption;
+  text: string;
+  image?: string | null;
+  selected: boolean;
+  correct: boolean;
+  revealed: boolean;
+  eliminated: boolean;
+  onClick: () => void;
+}) {
+  const isCorrectAnswer = revealed && correct;
+  const isWrongSelected = revealed && selected && !correct;
+  const isEliminated = eliminated && !revealed;
+
+  return (
+    <button
+      onClick={onClick}
+      disabled={revealed || eliminated}
+      className={cn(
+        "relative aspect-[5/6] rounded-xl overflow-hidden border-2 text-left",
+        "transition-all duration-200 bg-white/5",
+        isCorrectAnswer && "border-emerald-500",
+        isWrongSelected && "border-rose-500",
+        !isCorrectAnswer &&
+          !isWrongSelected &&
+          selected &&
+          !revealed &&
+          "border-primary",
+        !isCorrectAnswer && !isWrongSelected && !selected && "border-white/10",
+        isEliminated && "opacity-30",
+      )}
+    >
+      {image && (
+        <img
+          src={image}
+          alt=""
+          className="absolute inset-0 w-full h-full object-cover"
+        />
+      )}
+      {revealed && !correct && <div className="absolute inset-0 bg-black/50" />}
+      <span
+        className={cn(
+          "absolute top-2 left-2 w-6 h-6 rounded-md flex items-center justify-center text-xs font-bold shrink-0",
+          isCorrectAnswer && "bg-emerald-500 text-white",
+          isWrongSelected && "bg-rose-500 text-white",
+          !isCorrectAnswer && !isWrongSelected && "bg-white/85 text-black",
+        )}
+      >
+        {isCorrectAnswer ? (
+          <CheckCircle2 className="w-3.5 h-3.5" />
+        ) : isWrongSelected ? (
+          <XCircle className="w-3.5 h-3.5" />
+        ) : null}
+      </span>
+      <span
+        className={cn(
+          "absolute left-0 right-0 bottom-0 px-2 py-1.5 text-[13px] font-medium leading-tight",
+          isCorrectAnswer
+            ? "bg-emerald-500/90 text-white"
+            : isWrongSelected
+              ? "bg-rose-500/90 text-white"
+              : "bg-black/60 text-white",
+        )}
+      >
+        {label}. {text}
+      </span>
     </button>
   );
 }
@@ -501,7 +581,7 @@ export default function QuizPage() {
   if (phase === "lobby") {
     return (
       <>
-        <div className="max-w-lg mx-auto px-4 py-8 pb-28 lg:pb-8">
+        <div className="max-w-2xl mx-auto px-4 py-8 pb-28 lg:pb-8">
           {/* Header */}
           <div className="mb-8">
             <div className="flex items-center gap-3 mb-2">
@@ -737,10 +817,21 @@ export default function QuizPage() {
       C: currentQ.option_c,
       D: currentQ.option_d,
     };
+    const optionImages: Record<AnswerOption, string | null | undefined> = {
+      A: currentQ.option_a_image,
+      B: currentQ.option_b_image,
+      C: currentQ.option_c_image,
+      D: currentQ.option_d_image,
+    };
+    // Gambar per opsi sudah dijamin seragam dari backend (ada di ke-4 opsi
+    // atau tidak sama sekali), jadi cukup cek salah satu untuk pilih layout.
+    const hasOptionImages = Boolean(
+      optionImages.A || optionImages.B || optionImages.C || optionImages.D,
+    );
 
     return (
       <>
-        <div className="max-w-lg mx-auto px-4 py-6 pb-28 lg:pb-8">
+        <div className="max-w-2xl mx-auto px-4 py-6 pb-28 lg:pb-8">
           {/* Header: progress + timer */}
           <div className="flex items-center gap-3 mb-4">
             <span className="text-xs text-muted-foreground shrink-0">
@@ -801,39 +892,47 @@ export default function QuizPage() {
             )}
           </div>
 
-          {/* Image jika ada */}
-          {currentQ.image_url && (
-            <div className="mb-4 rounded-2xl overflow-hidden aspect-[2/1] bg-white/5">
-              <img
-                src={currentQ.image_url}
-                alt="Poster"
-                className="w-full h-full object-cover"
-              />
-            </div>
-          )}
-
-          {/* Soal */}
-          <div className="mb-5">
+          {/* Soal (teks narasi saja, tanpa gambar) */}
+          <div className="mb-4">
             <p className="text-base font-semibold leading-relaxed">
               {currentQ.question_text}
             </p>
           </div>
 
-          {/* Options */}
-          <div className="space-y-2.5 mb-6">
-            {OPTION_KEYS.map((key) => (
-              <OptionButton
-                key={key}
-                label={key}
-                text={optionTexts[key]}
-                selected={selectedAnswer === key}
-                correct={answerResult?.correct_option === key}
-                revealed={phase === "answered"}
-                eliminated={eliminatedOpts.includes(key)}
-                onClick={() => phase === "playing" && submitAnswer(key)}
-              />
-            ))}
-          </div>
+          {/* Options — grid poster (Opsi B) kalau semua opsi punya gambar,
+              list teks kalau tidak (angka, nama tanpa foto, dll) */}
+          {hasOptionImages ? (
+            <div className="grid grid-cols-2 gap-2.5 mb-6">
+              {OPTION_KEYS.map((key) => (
+                <GridOptionCard
+                  key={key}
+                  label={key}
+                  text={optionTexts[key]}
+                  image={optionImages[key]}
+                  selected={selectedAnswer === key}
+                  correct={answerResult?.correct_option === key}
+                  revealed={phase === "answered"}
+                  eliminated={eliminatedOpts.includes(key)}
+                  onClick={() => phase === "playing" && submitAnswer(key)}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-2.5 mb-6">
+              {OPTION_KEYS.map((key) => (
+                <OptionButton
+                  key={key}
+                  label={key}
+                  text={optionTexts[key]}
+                  selected={selectedAnswer === key}
+                  correct={answerResult?.correct_option === key}
+                  revealed={phase === "answered"}
+                  eliminated={eliminatedOpts.includes(key)}
+                  onClick={() => phase === "playing" && submitAnswer(key)}
+                />
+              ))}
+            </div>
+          )}
 
           {/* Explanation (setelah jawab) */}
           {phase === "answered" && answerResult && (
@@ -960,7 +1059,7 @@ export default function QuizPage() {
 
     return (
       <>
-        <div className="max-w-lg mx-auto px-4 py-8 pb-28 lg:pb-8">
+        <div className="max-w-2xl mx-auto px-4 py-8 pb-28 lg:pb-8">
           {/* Result hero */}
           <div className="text-center mb-8">
             <div
@@ -1084,7 +1183,7 @@ export default function QuizPage() {
 
     return (
       <>
-        <div className="max-w-lg mx-auto px-4 py-6 pb-28 lg:pb-8">
+        <div className="max-w-2xl mx-auto px-4 py-6 pb-28 lg:pb-8">
           <div className="flex items-center gap-3 mb-6">
             <button
               onClick={() => setPhase("lobby")}

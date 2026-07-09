@@ -83,6 +83,38 @@ function buildOptions(
   return { options: all, correctLabel: OPTION_LABELS[idx] };
 }
 
+// ─── Option Image Helpers ─────────────────────────────────────────────────────
+// Dipakai untuk tipe soal yang opsinya berupa judul film/series, agar tiap
+// pilihan jawaban bisa dilengkapi poster masing-masing (bukan satu gambar
+// besar di atas soal). Tipe soal yang opsinya angka/nama orang/teks filler
+// sengaja TIDAK diberi gambar (option_x_image = null).
+
+// Bangun map "judul → poster url" dari daftar item (film/series) yang
+// datanya sudah lengkap, supaya opsi salah (wrong options) yang cuma berupa
+// string judul tetap bisa dicocokkan ke poster aslinya.
+function imageMapFromItems<T>(
+  items: T[],
+  titleFn: (item: T) => string | null | undefined,
+  posterPathFn: (item: T) => string | null | undefined,
+): Map<string, string | null> {
+  const map = new Map<string, string | null>();
+  for (const item of items) {
+    const title = titleFn(item);
+    if (!title || map.has(title)) continue;
+    map.set(title, posterUrl(posterPathFn(item) ?? null));
+  }
+  return map;
+}
+
+// Cocokkan array teks opsi (hasil shuffle dari buildOptions) ke gambar
+// menggunakan map judul → poster. Opsi yang tidak ada di map akan null.
+function mapOptionImages(
+  options: string[],
+  imageMap: Map<string, string | null>,
+): (string | null)[] {
+  return options.map((text) => imageMap.get(text) ?? null);
+}
+
 // ─── CATEGORY: GENERAL MOVIE TRIVIA (50 soal) ────────────────────────────────
 // higher_rating: 20 easy | more_popular: 15 easy | guess_synopsis: 15 medium
 
@@ -90,26 +122,32 @@ async function generateHigherRating(movies: any[], count = 20) {
   const questions = [];
   const pool = shuffle(movies.filter((m) => m.vote_count > 500));
 
-  for (let i = 0; i < Math.min(count, Math.floor(pool.length / 2)); i++) {
-    const a = pool[i * 2];
-    const b = pool[i * 2 + 1];
-    if (!a || !b) break;
+  for (let i = 0; i < Math.min(count, Math.floor(pool.length / 4)); i++) {
+    const group = pool.slice(i * 4, i * 4 + 4);
+    if (group.length < 4) break;
+    const sorted = [...group].sort((x, y) => y.vote_average - x.vote_average);
+    const best = sorted[0];
+    if (sorted[1] && best.vote_average === sorted[1].vote_average) continue; // hindari seri/tie
+    const correctIdx = group.findIndex((m) => m.id === best.id);
 
-    const correct = a.vote_average >= b.vote_average ? "A" : "B";
     questions.push({
       type: "higher_rating",
       difficulty: "easy",
       category: "rating",
-      question_text: `Film mana yang memiliki rating lebih tinggi?`,
-      option_a: movieTitle(a),
-      option_b: movieTitle(b),
-      option_c: `Keduanya sama`,
-      option_d: `Tidak ada yang tahu`,
-      correct_option: correct,
-      explanation: `${movieTitle(a)} memiliki rating ${a.vote_average.toFixed(1)} sedangkan ${movieTitle(b)} memiliki rating ${b.vote_average.toFixed(1)}.`,
-      image_url: posterUrl(a.poster_path),
-      movie_id: a.id,
-      tmdb_id: a.tmdb_id,
+      question_text: `Dari 4 film berikut, mana yang memiliki rating tertinggi?`,
+      option_a: movieTitle(group[0]),
+      option_b: movieTitle(group[1]),
+      option_c: movieTitle(group[2]),
+      option_d: movieTitle(group[3]),
+      correct_option: OPTION_LABELS[correctIdx],
+      explanation: `"${movieTitle(best)}" memiliki rating tertinggi yaitu ${best.vote_average.toFixed(1)}.`,
+      image_url: posterUrl(best.poster_path),
+      option_a_image: posterUrl(group[0].poster_path),
+      option_b_image: posterUrl(group[1].poster_path),
+      option_c_image: posterUrl(group[2].poster_path),
+      option_d_image: posterUrl(group[3].poster_path),
+      movie_id: best.id,
+      tmdb_id: best.tmdb_id,
       is_manual: false,
     });
   }
@@ -120,26 +158,34 @@ async function generateMorePopular(movies: any[], count = 15) {
   const questions = [];
   const pool = shuffle(movies.filter((m) => m.popularity > 10));
 
-  for (let i = 0; i < Math.min(count, Math.floor(pool.length / 2)); i++) {
-    const a = pool[i * 2];
-    const b = pool[i * 2 + 1];
-    if (!a || !b) break;
+  for (let i = 0; i < Math.min(count, Math.floor(pool.length / 4)); i++) {
+    const group = pool.slice(i * 4, i * 4 + 4);
+    if (group.length < 4) break;
+    const sorted = [...group].sort(
+      (x, y) => (y.popularity ?? 0) - (x.popularity ?? 0),
+    );
+    const best = sorted[0];
+    if (sorted[1] && best.popularity === sorted[1].popularity) continue;
+    const correctIdx = group.findIndex((m) => m.id === best.id);
 
-    const correct = (a.popularity ?? 0) >= (b.popularity ?? 0) ? "A" : "B";
     questions.push({
       type: "more_popular",
       difficulty: "easy",
       category: "popularity",
-      question_text: `Film mana yang lebih populer berdasarkan skor popularitas?`,
-      option_a: movieTitle(a),
-      option_b: movieTitle(b),
-      option_c: `Popularitas keduanya sama`,
-      option_d: `Tidak bisa ditentukan`,
-      correct_option: correct,
-      explanation: `${movieTitle(a)} memiliki skor popularitas ${Math.round(a.popularity ?? 0)} sedangkan ${movieTitle(b)} memiliki skor ${Math.round(b.popularity ?? 0)}.`,
-      image_url: posterUrl(a.poster_path),
-      movie_id: a.id,
-      tmdb_id: a.tmdb_id,
+      question_text: `Dari 4 film berikut, mana yang paling populer saat ini?`,
+      option_a: movieTitle(group[0]),
+      option_b: movieTitle(group[1]),
+      option_c: movieTitle(group[2]),
+      option_d: movieTitle(group[3]),
+      correct_option: OPTION_LABELS[correctIdx],
+      explanation: `"${movieTitle(best)}" memiliki skor popularitas tertinggi yaitu ${Math.round(best.popularity ?? 0)}.`,
+      image_url: posterUrl(best.poster_path),
+      option_a_image: posterUrl(group[0].poster_path),
+      option_b_image: posterUrl(group[1].poster_path),
+      option_c_image: posterUrl(group[2].poster_path),
+      option_d_image: posterUrl(group[3].poster_path),
+      movie_id: best.id,
+      tmdb_id: best.tmdb_id,
       is_manual: false,
     });
   }
@@ -178,6 +224,10 @@ async function generateGuessSynopsis(movies: any[], count = 15) {
       correct_option: OPTION_LABELS[correctIdx],
       explanation: `Film ini adalah "${movieTitle(target)}" (${releaseYear(target) ?? "?"}).`,
       image_url: posterUrl(target.poster_path),
+      option_a_image: posterUrl(all[0].poster_path),
+      option_b_image: posterUrl(all[1].poster_path),
+      option_c_image: posterUrl(all[2].poster_path),
+      option_d_image: posterUrl(all[3].poster_path),
       movie_id: target.id,
       tmdb_id: target.tmdb_id,
       is_manual: false,
@@ -193,7 +243,7 @@ async function generateGuessDirector(count = 30) {
   // movie_crew tidak punya FK ke movies, jadi 2 query terpisah
   const { data: crews } = await supabase
     .from("movie_crew")
-    .select("movie_id, name")
+    .select("movie_id, name, profile_path")
     .eq("job", "Director")
     .not("name", "is", null)
     .limit(400);
@@ -214,13 +264,26 @@ async function generateGuessDirector(count = 30) {
 
   // Gabungkan crew + movie, filter yang movienya ada poster
   const combined = crews
-    .map((c: any) => ({ name: c.name, movie: movieMap.get(c.movie_id) }))
+    .map((c: any) => ({
+      name: c.name,
+      profile_path: c.profile_path,
+      movie: movieMap.get(c.movie_id),
+    }))
     .filter((c) => c.movie && c.name);
 
   const allDirectorNames = [
     ...new Set(combined.map((c) => c.name).filter(Boolean)),
   ] as string[];
   if (allDirectorNames.length < 4) return [];
+
+  // Map nama → foto profil (hanya nama yang punya foto)
+  const nameToProfile = new Map<string, string>();
+  for (const c of combined) {
+    if (c.name && c.profile_path && !nameToProfile.has(c.name)) {
+      nameToProfile.set(c.name, posterUrl(c.profile_path)!);
+    }
+  }
+  const namesWithPhoto = [...nameToProfile.keys()];
 
   const pool = shuffle(combined);
   const questions = [];
@@ -229,12 +292,21 @@ async function generateGuessDirector(count = 30) {
     const { name: directorName, movie } = pool[i];
     if (!directorName || !movie) continue;
 
+    // Konsistensi gambar: kalau nama benar punya foto, semua opsi salah
+    // juga harus diambil dari nama yang punya foto (biar seragam). Kalau
+    // tidak punya foto, semua opsi jadi teks biasa (tanpa gambar).
+    const hasPhoto = nameToProfile.has(directorName);
+    const candidatePool = hasPhoto ? namesWithPhoto : allDirectorNames;
     const wrongNames = shuffle(
-      allDirectorNames.filter((n) => n !== directorName),
+      candidatePool.filter((n) => n !== directorName),
     ).slice(0, 3);
     if (wrongNames.length < 3) continue;
 
     const { options, correctLabel } = buildOptions(directorName, wrongNames);
+    const optionImages = hasPhoto
+      ? mapOptionImages(options, nameToProfile)
+      : [null, null, null, null];
+
     questions.push({
       type: "guess_director",
       difficulty: "medium",
@@ -247,6 +319,10 @@ async function generateGuessDirector(count = 30) {
       correct_option: correctLabel,
       explanation: `"${movie.title}" disutradarai oleh ${directorName}.`,
       image_url: posterUrl(movie.poster_path),
+      option_a_image: optionImages[0],
+      option_b_image: optionImages[1],
+      option_c_image: optionImages[2],
+      option_d_image: optionImages[3],
       movie_id: movie.id,
       tmdb_id: movie.tmdb_id,
       is_manual: false,
@@ -263,7 +339,7 @@ async function generateGuessCast(count = 20) {
   const { data: casts } = await supabase
     .from("movie_cast")
     .select(
-      `name, character, order_index, movies!movie_cast_movie_id_fkey ( id, tmdb_id, title, poster_path )`,
+      `name, character, order_index, profile_path, movies!movie_cast_movie_id_fkey ( id, tmdb_id, title, poster_path )`,
     )
     .eq("order_index", 0)
     .not("name", "is", null)
@@ -278,6 +354,15 @@ async function generateGuessCast(count = 20) {
   ] as string[];
   if (allActorNames.length < 4) return [];
 
+  // Map nama → foto profil (hanya nama yang punya foto)
+  const nameToProfile = new Map<string, string>();
+  for (const c of casts as any[]) {
+    if (c.name && c.profile_path && !nameToProfile.has(c.name)) {
+      nameToProfile.set(c.name, posterUrl(c.profile_path)!);
+    }
+  }
+  const namesWithPhoto = [...nameToProfile.keys()];
+
   const pool = shuffle(
     casts.filter((c: any) => c.name && c.movies?.poster_path),
   );
@@ -289,12 +374,18 @@ async function generateGuessCast(count = 20) {
     const actorName: string = cast.name;
     if (!actorName || !movie?.poster_path) continue;
 
+    const hasPhoto = nameToProfile.has(actorName);
+    const candidatePool = hasPhoto ? namesWithPhoto : allActorNames;
     const wrongNames = shuffle(
-      allActorNames.filter((n) => n !== actorName),
+      candidatePool.filter((n) => n !== actorName),
     ).slice(0, 3);
     if (wrongNames.length < 3) continue;
 
     const { options, correctLabel } = buildOptions(actorName, wrongNames);
+    const optionImages = hasPhoto
+      ? mapOptionImages(options, nameToProfile)
+      : [null, null, null, null];
+
     questions.push({
       type: "guess_cast",
       difficulty: "medium",
@@ -307,6 +398,10 @@ async function generateGuessCast(count = 20) {
       correct_option: correctLabel,
       explanation: `Pemeran utama "${movie.title}" adalah ${actorName} yang memerankan karakter ${cast.character ?? "utama"}.`,
       image_url: posterUrl(movie.poster_path),
+      option_a_image: optionImages[0],
+      option_b_image: optionImages[1],
+      option_c_image: optionImages[2],
+      option_d_image: optionImages[3],
       movie_id: movie.id,
       tmdb_id: movie.tmdb_id,
       is_manual: false,
@@ -320,7 +415,7 @@ async function generateGuessCastByCharacter(count = 10) {
   const { data: casts } = await supabase
     .from("movie_cast")
     .select(
-      `name, character, order_index, movies!movie_cast_movie_id_fkey ( id, tmdb_id, title, poster_path )`,
+      `name, character, order_index, profile_path, movies!movie_cast_movie_id_fkey ( id, tmdb_id, title, poster_path )`,
     )
     .not("character", "is", null)
     .lte("order_index", 2)
@@ -335,6 +430,15 @@ async function generateGuessCastByCharacter(count = 10) {
   ] as string[];
   if (allActorNames.length < 4) return [];
 
+  // Map nama → foto profil (hanya nama yang punya foto)
+  const nameToProfile = new Map<string, string>();
+  for (const c of casts as any[]) {
+    if (c.name && c.profile_path && !nameToProfile.has(c.name)) {
+      nameToProfile.set(c.name, posterUrl(c.profile_path)!);
+    }
+  }
+  const namesWithPhoto = [...nameToProfile.keys()];
+
   const pool = shuffle(
     casts.filter(
       (c: any) => c.name && c.character?.length > 2 && c.movies?.poster_path,
@@ -348,12 +452,18 @@ async function generateGuessCastByCharacter(count = 10) {
     const actorName: string = cast.name;
     if (!actorName || !movie?.poster_path) continue;
 
+    const hasPhoto = nameToProfile.has(actorName);
+    const candidatePool = hasPhoto ? namesWithPhoto : allActorNames;
     const wrongNames = shuffle(
-      allActorNames.filter((n) => n !== actorName),
+      candidatePool.filter((n) => n !== actorName),
     ).slice(0, 3);
     if (wrongNames.length < 3) continue;
 
     const { options, correctLabel } = buildOptions(actorName, wrongNames);
+    const optionImages = hasPhoto
+      ? mapOptionImages(options, nameToProfile)
+      : [null, null, null, null];
+
     questions.push({
       type: "guess_cast",
       difficulty: "medium",
@@ -366,6 +476,10 @@ async function generateGuessCastByCharacter(count = 10) {
       correct_option: correctLabel,
       explanation: `Karakter "${cast.character}" dalam "${movie.title}" diperankan oleh ${actorName}.`,
       image_url: posterUrl(movie.poster_path),
+      option_a_image: optionImages[0],
+      option_b_image: optionImages[1],
+      option_c_image: optionImages[2],
+      option_d_image: optionImages[3],
       movie_id: movie.id,
       tmdb_id: movie.tmdb_id,
       is_manual: false,
@@ -470,6 +584,10 @@ async function generateGuessFranchise(_movies: any[], count = 20) {
         correct_option: correctLabel,
         explanation: `"${movieTitle(target)}" adalah bagian dari "${col.name}".`,
         image_url: posterUrl(target.poster_path),
+        option_a_image: null,
+        option_b_image: null,
+        option_c_image: null,
+        option_d_image: null,
         movie_id: target.id,
         tmdb_id: target.tmdb_id,
         is_manual: false,
@@ -527,6 +645,10 @@ async function generateGuessFranchiseOrder(_movies: any[], count = 10) {
       correct_option: correctLabel,
       explanation: `"${movieTitle(target)}" adalah film ke-${correctOrder} dalam "${col.name}" (${releaseYear(target)}).`,
       image_url: posterUrl(target.poster_path),
+      option_a_image: null,
+      option_b_image: null,
+      option_c_image: null,
+      option_d_image: null,
       movie_id: target.id,
       tmdb_id: target.tmdb_id,
       is_manual: false,
@@ -583,6 +705,10 @@ async function generateGuessTvSeries(count = 15) {
       correct_option: OPTION_LABELS[correctIdx],
       explanation: `Serial ini adalah "${target.name}" (${releaseYear(target) ?? "?"}).`,
       image_url: posterUrl(target.poster_path),
+      option_a_image: posterUrl(all[0].poster_path),
+      option_b_image: posterUrl(all[1].poster_path),
+      option_c_image: posterUrl(all[2].poster_path),
+      option_d_image: posterUrl(all[3].poster_path),
       movie_id: null,
       series_id: target.id,
       tmdb_id: target.tmdb_id,
@@ -606,27 +732,33 @@ async function generateGuessTvRating(count = 15) {
   const pool = shuffle(series);
   const questions = [];
 
-  for (let i = 0; i < Math.min(count, Math.floor(pool.length / 2)); i++) {
-    const a = pool[i * 2];
-    const b = pool[i * 2 + 1];
-    if (!a || !b) break;
+  for (let i = 0; i < Math.min(count, Math.floor(pool.length / 4)); i++) {
+    const group = pool.slice(i * 4, i * 4 + 4);
+    if (group.length < 4) break;
+    const sorted = [...group].sort((x, y) => y.vote_average - x.vote_average);
+    const best = sorted[0];
+    if (sorted[1] && best.vote_average === sorted[1].vote_average) continue;
+    const correctIdx = group.findIndex((s) => s.id === best.id);
 
-    const correct = a.vote_average >= b.vote_average ? "A" : "B";
     questions.push({
       type: "guess_tv_rating",
       difficulty: "easy",
       category: "rating",
-      question_text: `Serial TV mana yang memiliki rating lebih tinggi?`,
-      option_a: a.name,
-      option_b: b.name,
-      option_c: `Keduanya sama`,
-      option_d: `Tidak bisa ditentukan`,
-      correct_option: correct,
-      explanation: `${a.name} memiliki rating ${a.vote_average.toFixed(1)} sedangkan ${b.name} memiliki rating ${b.vote_average.toFixed(1)}.`,
-      image_url: posterUrl(a.poster_path),
+      question_text: `Dari 4 serial berikut, mana yang memiliki rating tertinggi?`,
+      option_a: group[0].name,
+      option_b: group[1].name,
+      option_c: group[2].name,
+      option_d: group[3].name,
+      correct_option: OPTION_LABELS[correctIdx],
+      explanation: `"${best.name}" memiliki rating tertinggi yaitu ${best.vote_average.toFixed(1)}.`,
+      image_url: posterUrl(best.poster_path),
+      option_a_image: posterUrl(group[0].poster_path),
+      option_b_image: posterUrl(group[1].poster_path),
+      option_c_image: posterUrl(group[2].poster_path),
+      option_d_image: posterUrl(group[3].poster_path),
       movie_id: null,
-      series_id: a.id,
-      tmdb_id: a.tmdb_id,
+      series_id: best.id,
+      tmdb_id: best.tmdb_id,
       is_manual: false,
     });
   }
@@ -690,7 +822,13 @@ async function generateGuessAward(movies: any[], count = 20) {
   }
 
   const pool = shuffle(validWinners);
-  const allMovieTitles = movies.map((m) => movieTitle(m));
+  const moviesWithPoster = movies.filter((m) => m.poster_path);
+  const allMovieTitles = moviesWithPoster.map((m) => movieTitle(m));
+  const titleToPoster = imageMapFromItems(
+    moviesWithPoster,
+    (m) => movieTitle(m),
+    (m) => m.poster_path,
+  );
   const questions = [];
 
   for (let i = 0; i < Math.min(count, pool.length); i++) {
@@ -721,6 +859,12 @@ async function generateGuessAward(movies: any[], count = 20) {
     if (wrongTitles.length < 3) continue;
 
     const { options, correctLabel } = buildOptions(filmTitle, wrongTitles);
+    // Pastikan judul yang benar selalu mengarah ke poster aslinya, walau
+    // judul tersebut tidak ada di daftar `movies` (mis. external_title).
+    const optionImages = mapOptionImages(
+      options,
+      new Map(titleToPoster).set(filmTitle, posterUrl(poster)),
+    );
     questions.push({
       type: "guess_award_film",
       difficulty: "hard",
@@ -733,6 +877,10 @@ async function generateGuessAward(movies: any[], count = 20) {
       correct_option: correctLabel,
       explanation: `"${filmTitle}" memenangkan penghargaan "${awardName}" di ${festivalName} pada tahun ${year}.`,
       image_url: posterUrl(poster),
+      option_a_image: optionImages[0],
+      option_b_image: optionImages[1],
+      option_c_image: optionImages[2],
+      option_d_image: optionImages[3],
       movie_id: filmId,
       tmdb_id: tmdbId,
       is_manual: false,
@@ -767,6 +915,12 @@ async function generateGuessAwardFallback(movies: any[], count = 20) {
     { name: "Cannes Film Festival", category: "Palme d'Or" },
   ];
 
+  const titleToPoster = imageMapFromItems(
+    highRated,
+    (m) => movieTitle(m),
+    (m) => m.poster_path,
+  );
+
   for (let i = 0; i < Math.min(count, highRated.length); i++) {
     const winner = highRated[i];
     const losers = shuffle(
@@ -778,6 +932,7 @@ async function generateGuessAwardFallback(movies: any[], count = 20) {
     const year = releaseYear(winner) ?? "?";
 
     const { options, correctLabel } = buildOptions(movieTitle(winner), losers);
+    const optionImages = mapOptionImages(options, titleToPoster);
     questions.push({
       type: "guess_award_film",
       difficulty: "hard",
@@ -790,6 +945,10 @@ async function generateGuessAwardFallback(movies: any[], count = 20) {
       correct_option: correctLabel,
       explanation: `"${movieTitle(winner)}" dengan rating ${winner.vote_average.toFixed(1)} dan ${winner.vote_count.toLocaleString()} votes adalah yang paling diakui dari keempat pilihan.`,
       image_url: posterUrl(winner.poster_path),
+      option_a_image: optionImages[0],
+      option_b_image: optionImages[1],
+      option_c_image: optionImages[2],
+      option_d_image: optionImages[3],
       movie_id: winner.id,
       tmdb_id: winner.tmdb_id,
       is_manual: false,
@@ -857,6 +1016,10 @@ async function generateGuessGenre(movies: any[], count = 10) {
       correct_option: correctLabel,
       explanation: `"${movieTitle(fg.movie)}" bergenre ${fg.genres.join(", ")}.`,
       image_url: posterUrl(fg.movie.poster_path),
+      option_a_image: null,
+      option_b_image: null,
+      option_c_image: null,
+      option_d_image: null,
       movie_id: fg.movie.id,
       tmdb_id: fg.movie.tmdb_id,
       is_manual: false,
@@ -956,6 +1119,10 @@ async function generateGuessGenreCombo(movies: any[], count = 10) {
       correct_option: correctLabel,
       explanation: `"${movieTitle(fg.movie)}" bergenre ${fg.genres.join(" dan ")}.`,
       image_url: posterUrl(fg.movie.poster_path),
+      option_a_image: null,
+      option_b_image: null,
+      option_c_image: null,
+      option_d_image: null,
       movie_id: fg.movie.id,
       tmdb_id: fg.movie.tmdb_id,
       is_manual: false,
@@ -992,6 +1159,10 @@ async function generateGuessYear(movies: any[], count = 15) {
       correct_option: correctLabel,
       explanation: `"${movieTitle(movie)}" pertama kali dirilis pada tahun ${year}.`,
       image_url: posterUrl(movie.poster_path),
+      option_a_image: null,
+      option_b_image: null,
+      option_c_image: null,
+      option_d_image: null,
       movie_id: movie.id,
       tmdb_id: movie.tmdb_id,
       is_manual: false,
@@ -1028,6 +1199,10 @@ async function generateGuessReleaseOrder(movies: any[], count = 5) {
       correct_option: OPTION_LABELS[correctIdx],
       explanation: `"${movieTitle(earliest)}" adalah yang paling awal dirilis, yaitu pada ${earliest.release_date.substring(0, 7)}.`,
       image_url: posterUrl(earliest.poster_path),
+      option_a_image: posterUrl(all[0].poster_path),
+      option_b_image: posterUrl(all[1].poster_path),
+      option_c_image: posterUrl(all[2].poster_path),
+      option_d_image: posterUrl(all[3].poster_path),
       movie_id: earliest.id,
       tmdb_id: earliest.tmdb_id,
       is_manual: false,
@@ -1063,6 +1238,11 @@ async function generateGuessCharacter(count = 10) {
   const allMovieTitles = [
     ...new Set(casts.map((c: any) => movieTitle(c.movies))),
   ] as string[];
+  const titleToPoster = imageMapFromItems(
+    casts,
+    (c: any) => movieTitle(c.movies),
+    (c: any) => c.movies?.poster_path,
+  );
   const questions = [];
 
   for (let i = 0; i < Math.min(count, pool.length); i++) {
@@ -1079,6 +1259,7 @@ async function generateGuessCharacter(count = 10) {
       movieTitle(movie),
       wrongTitles,
     );
+    const optionImages = mapOptionImages(options, titleToPoster);
     const cleanCharName = (cast.character ?? "")
       .replace(/\s*\(voice\)\s*/i, "")
       .trim();
@@ -1094,6 +1275,10 @@ async function generateGuessCharacter(count = 10) {
       correct_option: correctLabel,
       explanation: `Karakter "${cleanCharName}" adalah salah satu karakter dalam film "${movieTitle(movie)}".`,
       image_url: posterUrl(movie.poster_path),
+      option_a_image: optionImages[0],
+      option_b_image: optionImages[1],
+      option_c_image: optionImages[2],
+      option_d_image: optionImages[3],
       movie_id: movie.id,
       tmdb_id: movie.tmdb_id,
       is_manual: false,
@@ -1107,7 +1292,7 @@ async function generateGuessVillain(count = 10) {
   const { data: casts } = await supabase
     .from("movie_cast")
     .select(
-      `name, character, order_index, movies!movie_cast_movie_id_fkey ( id, tmdb_id, title, poster_path )`,
+      `name, character, order_index, profile_path, movies!movie_cast_movie_id_fkey ( id, tmdb_id, title, poster_path )`,
     )
     .not("character", "is", null)
     .not("name", "is", null)
@@ -1123,6 +1308,15 @@ async function generateGuessVillain(count = 10) {
     ...new Set(casts.map((c: any) => c.name).filter(Boolean)),
   ] as string[];
   if (allActorNames.length < 4) return [];
+
+  // Map nama → foto profil (hanya nama yang punya foto)
+  const nameToProfile = new Map<string, string>();
+  for (const c of casts as any[]) {
+    if (c.name && c.profile_path && !nameToProfile.has(c.name)) {
+      nameToProfile.set(c.name, posterUrl(c.profile_path)!);
+    }
+  }
+  const namesWithPhoto = [...nameToProfile.keys()];
 
   // Pendekatan praktis: karena data tidak punya tag villain eksplisit,
   // buat soal "Siapa yang memerankan karakter X?" untuk pemeran order_index 1–4
@@ -1141,12 +1335,17 @@ async function generateGuessVillain(count = 10) {
     const actorName: string = cast.name;
     if (!actorName || !movie?.poster_path) continue;
 
+    const hasPhoto = nameToProfile.has(actorName);
+    const candidatePool = hasPhoto ? namesWithPhoto : allActorNames;
     const wrongNames = shuffle(
-      allActorNames.filter((n) => n !== actorName),
+      candidatePool.filter((n) => n !== actorName),
     ).slice(0, 3);
     if (wrongNames.length < 3) continue;
 
     const { options, correctLabel } = buildOptions(actorName, wrongNames);
+    const optionImages = hasPhoto
+      ? mapOptionImages(options, nameToProfile)
+      : [null, null, null, null];
     const cleanVillainChar = (cast.character ?? "")
       .replace(/\s*\(voice\)\s*/i, "")
       .trim();
@@ -1162,6 +1361,10 @@ async function generateGuessVillain(count = 10) {
       correct_option: correctLabel,
       explanation: `Karakter "${cast.character}" dalam "${movie.title}" diperankan oleh ${actorName}.`,
       image_url: posterUrl(movie.poster_path),
+      option_a_image: optionImages[0],
+      option_b_image: optionImages[1],
+      option_c_image: optionImages[2],
+      option_d_image: optionImages[3],
       movie_id: movie.id,
       tmdb_id: movie.tmdb_id,
       is_manual: false,
@@ -1180,25 +1383,32 @@ async function generateGuessVillain(count = 10) {
 async function generateHigherRatingV2(movies: any[], count = 20) {
   const questions = [];
   const pool = shuffle(movies.filter((m) => m.vote_count > 500));
-  for (let i = 0; i < Math.min(count, Math.floor(pool.length / 2)); i++) {
-    const a = pool[i * 2],
-      b = pool[i * 2 + 1];
-    if (!a || !b) break;
-    const correct = a.vote_average >= b.vote_average ? "A" : "B";
+  for (let i = 0; i < Math.min(count, Math.floor(pool.length / 4)); i++) {
+    const group = pool.slice(i * 4, i * 4 + 4);
+    if (group.length < 4) break;
+    const sorted = [...group].sort((x, y) => y.vote_average - x.vote_average);
+    const best = sorted[0];
+    if (sorted[1] && best.vote_average === sorted[1].vote_average) continue;
+    const correctIdx = group.findIndex((m) => m.id === best.id);
+
     questions.push({
       type: "higher_rating",
       difficulty: "easy",
       category: "rating",
-      question_text: `Menurut penilaian penonton, film mana yang lebih bagus?`,
-      option_a: movieTitle(a),
-      option_b: movieTitle(b),
-      option_c: "Nilainya sama",
-      option_d: "Belum bisa dinilai",
-      correct_option: correct,
-      explanation: `${movieTitle(a)} rated ${a.vote_average.toFixed(1)} vs ${movieTitle(b)} rated ${b.vote_average.toFixed(1)}.`,
-      image_url: posterUrl(a.poster_path),
-      movie_id: a.id,
-      tmdb_id: a.tmdb_id,
+      question_text: `Menurut penilaian penonton, mana yang paling bagus dari 4 film ini?`,
+      option_a: movieTitle(group[0]),
+      option_b: movieTitle(group[1]),
+      option_c: movieTitle(group[2]),
+      option_d: movieTitle(group[3]),
+      correct_option: OPTION_LABELS[correctIdx],
+      explanation: `"${movieTitle(best)}" punya rating tertinggi, ${best.vote_average.toFixed(1)}.`,
+      image_url: posterUrl(best.poster_path),
+      option_a_image: posterUrl(group[0].poster_path),
+      option_b_image: posterUrl(group[1].poster_path),
+      option_c_image: posterUrl(group[2].poster_path),
+      option_d_image: posterUrl(group[3].poster_path),
+      movie_id: best.id,
+      tmdb_id: best.tmdb_id,
       is_manual: false,
     });
   }
@@ -1208,25 +1418,34 @@ async function generateHigherRatingV2(movies: any[], count = 20) {
 async function generateMorePopularV2(movies: any[], count = 15) {
   const questions = [];
   const pool = shuffle(movies.filter((m) => m.popularity > 10));
-  for (let i = 0; i < Math.min(count, Math.floor(pool.length / 2)); i++) {
-    const a = pool[i * 2],
-      b = pool[i * 2 + 1];
-    if (!a || !b) break;
-    const correct = (a.popularity ?? 0) >= (b.popularity ?? 0) ? "A" : "B";
+  for (let i = 0; i < Math.min(count, Math.floor(pool.length / 4)); i++) {
+    const group = pool.slice(i * 4, i * 4 + 4);
+    if (group.length < 4) break;
+    const sorted = [...group].sort(
+      (x, y) => (y.popularity ?? 0) - (x.popularity ?? 0),
+    );
+    const best = sorted[0];
+    if (sorted[1] && best.popularity === sorted[1].popularity) continue;
+    const correctIdx = group.findIndex((m) => m.id === best.id);
+
     questions.push({
       type: "more_popular",
       difficulty: "easy",
       category: "popularity",
-      question_text: `Film mana yang lebih banyak dibicarakan orang?`,
-      option_a: movieTitle(a),
-      option_b: movieTitle(b),
-      option_c: "Sama-sama populer",
-      option_d: "Tidak diketahui",
-      correct_option: correct,
-      explanation: `${movieTitle(a)} skor popularitas ${Math.round(a.popularity ?? 0)} vs ${movieTitle(b)} skor ${Math.round(b.popularity ?? 0)}.`,
-      image_url: posterUrl(a.poster_path),
-      movie_id: a.id,
-      tmdb_id: a.tmdb_id,
+      question_text: `Mana yang paling banyak dibicarakan orang dari 4 film ini?`,
+      option_a: movieTitle(group[0]),
+      option_b: movieTitle(group[1]),
+      option_c: movieTitle(group[2]),
+      option_d: movieTitle(group[3]),
+      correct_option: OPTION_LABELS[correctIdx],
+      explanation: `"${movieTitle(best)}" punya skor popularitas tertinggi, ${Math.round(best.popularity ?? 0)}.`,
+      image_url: posterUrl(best.poster_path),
+      option_a_image: posterUrl(group[0].poster_path),
+      option_b_image: posterUrl(group[1].poster_path),
+      option_c_image: posterUrl(group[2].poster_path),
+      option_d_image: posterUrl(group[3].poster_path),
+      movie_id: best.id,
+      tmdb_id: best.tmdb_id,
       is_manual: false,
     });
   }
@@ -1261,6 +1480,10 @@ async function generateGuessSynopsisV2(movies: any[], count = 15) {
       correct_option: OPTION_LABELS[correctIdx],
       explanation: `Deskripsi tersebut adalah sinopsis dari "${movieTitle(target)}" (${releaseYear(target) ?? "?"}).`,
       image_url: posterUrl(target.poster_path),
+      option_a_image: posterUrl(all[0].poster_path),
+      option_b_image: posterUrl(all[1].poster_path),
+      option_c_image: posterUrl(all[2].poster_path),
+      option_d_image: posterUrl(all[3].poster_path),
       movie_id: target.id,
       tmdb_id: target.tmdb_id,
       is_manual: false,
@@ -1272,7 +1495,7 @@ async function generateGuessSynopsisV2(movies: any[], count = 15) {
 async function generateGuessDirectorV2(count = 30) {
   const { data: crews } = await supabase
     .from("movie_crew")
-    .select("movie_id, name")
+    .select("movie_id, name, profile_path")
     .eq("job", "Director")
     .not("name", "is", null)
     .limit(400);
@@ -1286,20 +1509,36 @@ async function generateGuessDirectorV2(count = 30) {
   if (!moviesData?.length) return [];
   const movieMap = new Map(moviesData.map((m: any) => [m.id, m]));
   const combined = crews
-    .map((c: any) => ({ name: c.name, movie: movieMap.get(c.movie_id) }))
+    .map((c: any) => ({
+      name: c.name,
+      profile_path: c.profile_path,
+      movie: movieMap.get(c.movie_id),
+    }))
     .filter((c) => c.movie && c.name);
   const allNames = [...new Set(combined.map((c) => c.name))] as string[];
   if (allNames.length < 4) return [];
+  const nameToProfile = new Map<string, string>();
+  for (const c of combined) {
+    if (c.name && c.profile_path && !nameToProfile.has(c.name)) {
+      nameToProfile.set(c.name, posterUrl(c.profile_path)!);
+    }
+  }
+  const namesWithPhoto = [...nameToProfile.keys()];
   const pool = shuffle(combined);
   const questions = [];
   for (let i = 0; i < Math.min(count, pool.length); i++) {
     const { name: directorName, movie } = pool[i];
     if (!directorName || !movie) continue;
+    const hasPhoto = nameToProfile.has(directorName);
+    const candidatePool = hasPhoto ? namesWithPhoto : allNames;
     const wrongNames = shuffle(
-      allNames.filter((n) => n !== directorName),
+      candidatePool.filter((n) => n !== directorName),
     ).slice(0, 3);
     if (wrongNames.length < 3) continue;
     const { options, correctLabel } = buildOptions(directorName, wrongNames);
+    const optionImages = hasPhoto
+      ? mapOptionImages(options, nameToProfile)
+      : [null, null, null, null];
     questions.push({
       type: "guess_director",
       difficulty: "medium",
@@ -1312,6 +1551,10 @@ async function generateGuessDirectorV2(count = 30) {
       correct_option: correctLabel,
       explanation: `"${movie.title}" adalah karya sutradara ${directorName}.`,
       image_url: posterUrl(movie.poster_path),
+      option_a_image: optionImages[0],
+      option_b_image: optionImages[1],
+      option_c_image: optionImages[2],
+      option_d_image: optionImages[3],
       movie_id: movie.id,
       tmdb_id: movie.tmdb_id,
       is_manual: false,
@@ -1324,7 +1567,7 @@ async function generateGuessCastV2(count = 20) {
   const { data: casts } = await supabase
     .from("movie_cast")
     .select(
-      `name, character, order_index, movies!movie_cast_movie_id_fkey ( id, tmdb_id, title, poster_path )`,
+      `name, character, order_index, profile_path, movies!movie_cast_movie_id_fkey ( id, tmdb_id, title, poster_path )`,
     )
     .eq("order_index", 0)
     .not("name", "is", null)
@@ -1335,6 +1578,13 @@ async function generateGuessCastV2(count = 20) {
     ...new Set(casts.map((c: any) => c.name).filter(Boolean)),
   ] as string[];
   if (allActorNames.length < 4) return [];
+  const nameToProfile = new Map<string, string>();
+  for (const c of casts as any[]) {
+    if (c.name && c.profile_path && !nameToProfile.has(c.name)) {
+      nameToProfile.set(c.name, posterUrl(c.profile_path)!);
+    }
+  }
+  const namesWithPhoto = [...nameToProfile.keys()];
   const pool = shuffle(
     casts.filter((c: any) => c.name && c.movies?.poster_path),
   );
@@ -1344,11 +1594,16 @@ async function generateGuessCastV2(count = 20) {
     const movie = cast.movies;
     const actorName: string = cast.name;
     if (!actorName || !movie?.poster_path) continue;
+    const hasPhoto = nameToProfile.has(actorName);
+    const candidatePool = hasPhoto ? namesWithPhoto : allActorNames;
     const wrongNames = shuffle(
-      allActorNames.filter((n) => n !== actorName),
+      candidatePool.filter((n) => n !== actorName),
     ).slice(0, 3);
     if (wrongNames.length < 3) continue;
     const { options, correctLabel } = buildOptions(actorName, wrongNames);
+    const optionImages = hasPhoto
+      ? mapOptionImages(options, nameToProfile)
+      : [null, null, null, null];
     questions.push({
       type: "guess_cast",
       difficulty: "medium",
@@ -1361,6 +1616,10 @@ async function generateGuessCastV2(count = 20) {
       correct_option: correctLabel,
       explanation: `Bintang utama "${movie.title}" adalah ${actorName}.`,
       image_url: posterUrl(movie.poster_path),
+      option_a_image: optionImages[0],
+      option_b_image: optionImages[1],
+      option_c_image: optionImages[2],
+      option_d_image: optionImages[3],
       movie_id: movie.id,
       tmdb_id: movie.tmdb_id,
       is_manual: false,
@@ -1415,6 +1674,11 @@ async function generateGuessTagline(count = 50) {
   if (!films?.length) return [];
   const pool = shuffle(films.filter((f: any) => f.tagline?.length > 10));
   const allTitles = pool.map((f: any) => f.title);
+  const titleToPoster = imageMapFromItems(
+    pool,
+    (f: any) => f.title,
+    (f: any) => f.poster_path,
+  );
   const questions = [];
   for (let i = 0; i < Math.min(count, pool.length); i++) {
     const target = pool[i];
@@ -1423,6 +1687,7 @@ async function generateGuessTagline(count = 50) {
     ).slice(0, 3);
     if (wrongTitles.length < 3) continue;
     const { options, correctLabel } = buildOptions(target.title, wrongTitles);
+    const optionImages = mapOptionImages(options, titleToPoster);
     questions.push({
       type: "guess_tagline",
       difficulty: "medium",
@@ -1435,6 +1700,10 @@ async function generateGuessTagline(count = 50) {
       correct_option: correctLabel,
       explanation: `Tagline "${target.tagline}" adalah milik film "${target.title}".`,
       image_url: posterUrl(target.poster_path),
+      option_a_image: optionImages[0],
+      option_b_image: optionImages[1],
+      option_c_image: optionImages[2],
+      option_d_image: optionImages[3],
       movie_id: target.id,
       tmdb_id: target.tmdb_id,
       is_manual: false,
@@ -1457,27 +1726,33 @@ async function generateGuessRuntimeLonger(movies: any[], count = 40) {
   if (!films?.length) return [];
   const pool = shuffle(films);
   const questions = [];
-  for (let i = 0; i < Math.min(count, Math.floor(pool.length / 2)); i++) {
-    const a = pool[i * 2],
-      b = pool[i * 2 + 1];
-    if (!a || !b) break;
-    if (Math.abs(a.runtime - b.runtime) < 5) continue; // skip kalau terlalu mirip
-    const correct = a.runtime >= b.runtime ? "A" : "B";
-    const longer = correct === "A" ? a : b;
+  for (let i = 0; i < Math.min(count, Math.floor(pool.length / 4)); i++) {
+    const group = pool.slice(i * 4, i * 4 + 4);
+    if (group.length < 4) break;
+    const sorted = [...group].sort((x, y) => y.runtime - x.runtime);
+    const longest = sorted[0];
+    if (sorted[1] && Math.abs(longest.runtime - sorted[1].runtime) < 5)
+      continue; // hindari yang terlalu mirip
+    const correctIdx = group.findIndex((m) => m.id === longest.id);
+
     questions.push({
       type: "guess_runtime_longer",
       difficulty: "easy",
       category: "general",
-      question_text: `Film mana yang durasinya lebih panjang?`,
-      option_a: movieTitle(a),
-      option_b: movieTitle(b),
-      option_c: "Durasinya sama",
-      option_d: "Tidak ada informasi",
-      correct_option: correct,
-      explanation: `"${movieTitle(a)}" berdurasi ${a.runtime} menit, "${movieTitle(b)}" berdurasi ${b.runtime} menit.`,
-      image_url: posterUrl(longer.poster_path),
-      movie_id: longer.id,
-      tmdb_id: longer.tmdb_id,
+      question_text: `Dari 4 film berikut, mana yang durasinya paling panjang?`,
+      option_a: movieTitle(group[0]),
+      option_b: movieTitle(group[1]),
+      option_c: movieTitle(group[2]),
+      option_d: movieTitle(group[3]),
+      correct_option: OPTION_LABELS[correctIdx],
+      explanation: `"${movieTitle(longest)}" berdurasi paling panjang, yaitu ${longest.runtime} menit.`,
+      image_url: posterUrl(longest.poster_path),
+      option_a_image: posterUrl(group[0].poster_path),
+      option_b_image: posterUrl(group[1].poster_path),
+      option_c_image: posterUrl(group[2].poster_path),
+      option_d_image: posterUrl(group[3].poster_path),
+      movie_id: longest.id,
+      tmdb_id: longest.tmdb_id,
       is_manual: false,
     });
   }
@@ -1564,27 +1839,32 @@ async function generateGuessHigherRevenue(count = 40) {
   if (!films?.length) return [];
   const pool = shuffle(films);
   const questions = [];
-  for (let i = 0; i < Math.min(count, Math.floor(pool.length / 2)); i++) {
-    const a = pool[i * 2],
-      b = pool[i * 2 + 1];
-    if (!a || !b) break;
-    if (a.revenue === b.revenue) continue;
-    const correct = a.revenue >= b.revenue ? "A" : "B";
-    const winner = correct === "A" ? a : b;
-    const fmt = (n: number) =>
-      n >= 1e9 ? `$${(n / 1e9).toFixed(1)}B` : `$${Math.round(n / 1e6)}M`;
+  const fmt = (n: number) =>
+    n >= 1e9 ? `$${(n / 1e9).toFixed(1)}B` : `$${Math.round(n / 1e6)}M`;
+  for (let i = 0; i < Math.min(count, Math.floor(pool.length / 4)); i++) {
+    const group = pool.slice(i * 4, i * 4 + 4);
+    if (group.length < 4) break;
+    const sorted = [...group].sort((x, y) => y.revenue - x.revenue);
+    const winner = sorted[0];
+    if (sorted[1] && winner.revenue === sorted[1].revenue) continue;
+    const correctIdx = group.findIndex((m) => m.id === winner.id);
+
     questions.push({
       type: "guess_higher_revenue",
       difficulty: "easy",
       category: "general",
-      question_text: `Film mana yang menghasilkan pendapatan box office lebih tinggi?`,
-      option_a: movieTitle(a),
-      option_b: movieTitle(b),
-      option_c: "Keduanya sama",
-      option_d: "Tidak ada data",
-      correct_option: correct,
-      explanation: `"${movieTitle(a)}" meraup ${fmt(a.revenue)}, sedangkan "${movieTitle(b)}" meraup ${fmt(b.revenue)}.`,
+      question_text: `Dari 4 film berikut, mana yang pendapatan box office-nya paling tinggi?`,
+      option_a: movieTitle(group[0]),
+      option_b: movieTitle(group[1]),
+      option_c: movieTitle(group[2]),
+      option_d: movieTitle(group[3]),
+      correct_option: OPTION_LABELS[correctIdx],
+      explanation: `"${movieTitle(winner)}" meraup pendapatan tertinggi, yaitu ${fmt(winner.revenue)}.`,
       image_url: posterUrl(winner.poster_path),
+      option_a_image: posterUrl(group[0].poster_path),
+      option_b_image: posterUrl(group[1].poster_path),
+      option_c_image: posterUrl(group[2].poster_path),
+      option_d_image: posterUrl(group[3].poster_path),
       movie_id: winner.id,
       tmdb_id: winner.tmdb_id,
       is_manual: false,
@@ -1606,27 +1886,32 @@ async function generateGuessHigherBudget(count = 40) {
   if (!films?.length) return [];
   const pool = shuffle(films);
   const questions = [];
-  for (let i = 0; i < Math.min(count, Math.floor(pool.length / 2)); i++) {
-    const a = pool[i * 2],
-      b = pool[i * 2 + 1];
-    if (!a || !b) break;
-    if (a.budget === b.budget) continue;
-    const correct = a.budget >= b.budget ? "A" : "B";
-    const winner = correct === "A" ? a : b;
-    const fmt = (n: number) =>
-      n >= 1e9 ? `$${(n / 1e9).toFixed(1)}B` : `$${Math.round(n / 1e6)}M`;
+  const fmt = (n: number) =>
+    n >= 1e9 ? `$${(n / 1e9).toFixed(1)}B` : `$${Math.round(n / 1e6)}M`;
+  for (let i = 0; i < Math.min(count, Math.floor(pool.length / 4)); i++) {
+    const group = pool.slice(i * 4, i * 4 + 4);
+    if (group.length < 4) break;
+    const sorted = [...group].sort((x, y) => y.budget - x.budget);
+    const winner = sorted[0];
+    if (sorted[1] && winner.budget === sorted[1].budget) continue;
+    const correctIdx = group.findIndex((m) => m.id === winner.id);
+
     questions.push({
       type: "guess_higher_budget",
       difficulty: "medium",
       category: "general",
-      question_text: `Film mana yang memiliki anggaran produksi lebih besar?`,
-      option_a: movieTitle(a),
-      option_b: movieTitle(b),
-      option_c: "Anggarannya sama",
-      option_d: "Data tidak tersedia",
-      correct_option: correct,
-      explanation: `Budget "${movieTitle(a)}" adalah ${fmt(a.budget)}, sedangkan "${movieTitle(b)}" adalah ${fmt(b.budget)}.`,
+      question_text: `Dari 4 film berikut, mana yang anggaran produksinya paling besar?`,
+      option_a: movieTitle(group[0]),
+      option_b: movieTitle(group[1]),
+      option_c: movieTitle(group[2]),
+      option_d: movieTitle(group[3]),
+      correct_option: OPTION_LABELS[correctIdx],
+      explanation: `"${movieTitle(winner)}" punya anggaran produksi terbesar, yaitu ${fmt(winner.budget)}.`,
       image_url: posterUrl(winner.poster_path),
+      option_a_image: posterUrl(group[0].poster_path),
+      option_b_image: posterUrl(group[1].poster_path),
+      option_c_image: posterUrl(group[2].poster_path),
+      option_d_image: posterUrl(group[3].poster_path),
       movie_id: winner.id,
       tmdb_id: winner.tmdb_id,
       is_manual: false,
@@ -1697,24 +1982,33 @@ async function generateGuessTvMoreSeasons(count = 30) {
   if (!series?.length) return [];
   const pool = shuffle(series);
   const questions = [];
-  for (let i = 0; i < Math.min(count, Math.floor(pool.length / 2)); i++) {
-    const a = pool[i * 2],
-      b = pool[i * 2 + 1];
-    if (!a || !b || a.number_of_seasons === b.number_of_seasons) continue;
-    const correct = a.number_of_seasons >= b.number_of_seasons ? "A" : "B";
-    const winner = correct === "A" ? a : b;
+  for (let i = 0; i < Math.min(count, Math.floor(pool.length / 4)); i++) {
+    const group = pool.slice(i * 4, i * 4 + 4);
+    if (group.length < 4) break;
+    const sorted = [...group].sort(
+      (x, y) => y.number_of_seasons - x.number_of_seasons,
+    );
+    const winner = sorted[0];
+    if (sorted[1] && winner.number_of_seasons === sorted[1].number_of_seasons)
+      continue;
+    const correctIdx = group.findIndex((s) => s.id === winner.id);
+
     questions.push({
       type: "guess_tv_more_seasons",
       difficulty: "easy",
       category: "general",
-      question_text: `Serial mana yang memiliki lebih banyak musim (season)?`,
-      option_a: a.name,
-      option_b: b.name,
-      option_c: "Jumlah musimnya sama",
-      option_d: "Belum selesai tayang",
-      correct_option: correct,
-      explanation: `"${a.name}" memiliki ${a.number_of_seasons} musim, "${b.name}" memiliki ${b.number_of_seasons} musim.`,
+      question_text: `Dari 4 serial berikut, mana yang memiliki musim (season) paling banyak?`,
+      option_a: group[0].name,
+      option_b: group[1].name,
+      option_c: group[2].name,
+      option_d: group[3].name,
+      correct_option: OPTION_LABELS[correctIdx],
+      explanation: `"${winner.name}" memiliki musim paling banyak, yaitu ${winner.number_of_seasons} musim.`,
       image_url: posterUrl(winner.poster_path),
+      option_a_image: posterUrl(group[0].poster_path),
+      option_b_image: posterUrl(group[1].poster_path),
+      option_c_image: posterUrl(group[2].poster_path),
+      option_d_image: posterUrl(group[3].poster_path),
       movie_id: null,
       series_id: winner.id,
       tmdb_id: winner.tmdb_id,
@@ -1789,6 +2083,10 @@ async function generateGuessFestival(count = 30) {
       correct_option: correctLabel,
       explanation: `"${filmTitle}" ditayangkan di ${festName} pada tahun ${year}.`,
       image_url: posterUrl(poster),
+      option_a_image: null,
+      option_b_image: null,
+      option_c_image: null,
+      option_d_image: null,
       movie_id: movieId,
       tmdb_id: tmdbId,
       is_manual: false,
@@ -1809,7 +2107,13 @@ async function generateGuessOscarContender(movies: any[], count = 40) {
     .limit(150);
   if (!contenders?.length) return [];
 
-  const allMovieTitles = movies.map((m) => movieTitle(m));
+  const moviesWithPoster = movies.filter((m) => m.poster_path);
+  const allMovieTitles = moviesWithPoster.map((m) => movieTitle(m));
+  const titleToPoster = imageMapFromItems(
+    moviesWithPoster,
+    (m) => movieTitle(m),
+    (m) => m.poster_path,
+  );
   const pool = shuffle(
     contenders.filter((c: any) => c.movies?.poster_path || c.poster_path),
   );
@@ -1829,6 +2133,10 @@ async function generateGuessOscarContender(movies: any[], count = 40) {
     ).slice(0, 3);
     if (wrongTitles.length < 3) continue;
     const { options, correctLabel } = buildOptions(filmTitle, wrongTitles);
+    const optionImages = mapOptionImages(
+      options,
+      new Map(titleToPoster).set(filmTitle, posterUrl(poster)),
+    );
     questions.push({
       type: "guess_oscar_contender",
       difficulty: "medium",
@@ -1841,6 +2149,10 @@ async function generateGuessOscarContender(movies: any[], count = 40) {
       correct_option: correctLabel,
       explanation: `"${filmTitle}" adalah salah satu film yang masuk dalam daftar kandidat Oscar.`,
       image_url: posterUrl(poster),
+      option_a_image: optionImages[0],
+      option_b_image: optionImages[1],
+      option_c_image: optionImages[2],
+      option_d_image: optionImages[3],
       movie_id: movieId,
       tmdb_id: tmdbId,
       is_manual: false,
@@ -1922,6 +2234,10 @@ async function generateGuessWorldPremiere(count = 30) {
       correct_option: correctLabel,
       explanation: `"${filmTitle}" melakukan world premiere di ${festName} (${year}).`,
       image_url: posterUrl(poster),
+      option_a_image: null,
+      option_b_image: null,
+      option_c_image: null,
+      option_d_image: null,
       movie_id: movieId,
       tmdb_id: tmdbId,
       is_manual: false,

@@ -68,7 +68,7 @@ export async function GET(request: NextRequest) {
     const { data: questions, error: qErr } = await supabase
       .from("questions")
       .select(
-        "id, type, difficulty, category, question_text, option_a, option_b, option_c, option_d, image_url, movie_id, tmdb_id",
+        "id, type, difficulty, category, question_text, option_a, option_b, option_c, option_d, option_a_image, option_b_image, option_c_image, option_d_image, image_url, movie_id, tmdb_id",
       )
       // Sengaja TIDAK include correct_option — dikirim satu per satu saat jawab
       .in("id", questionIds);
