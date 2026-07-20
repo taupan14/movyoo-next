@@ -1,24 +1,22 @@
 "use client";
 
 /**
- * components/contributor/article-form.tsx — FILE BARU
- * Form create/edit artikel, field mengikuti kolom tabel `articles`.
- * Dipakai di app/articles/manage/new dan app/articles/manage/[id].
+ * components/contributor/article-form.tsx — UPDATED
+ * Tambahan: MediaPicker untuk menautkan film/series (article_movies / article_tv)
  */
 
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import {
-  Loader2,
-  ImagePlus,
-  Save,
-  Send,
-  AlertTriangle,
-  X,
-} from "lucide-react";
+import { Loader2, ImagePlus, Save, Send, AlertTriangle, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { startLoader } from "@/components/page-loader";
-import type { ArticleFormInput, ContributorArticle, TopicType } from "@/types/contributor";
+import { MediaPicker } from "./media-picker";
+import type {
+  ArticleFormInput,
+  ArticleMediaLink,
+  ContributorArticle,
+  TopicType,
+} from "@/types/contributor";
 
 const TOPIC_OPTIONS: { value: TopicType | ""; label: string }[] = [
   { value: "", label: "Tanpa topik spesifik" },
@@ -61,12 +59,19 @@ export function ArticleForm({ initialData, articleId }: ArticleFormProps) {
     status: initialData?.status ?? "published",
   });
 
+  const [selectedMedia, setSelectedMedia] = useState<ArticleMediaLink[]>(
+    initialData?.media ?? [],
+  );
+
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState<"draft" | "published" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [flaggedWords, setFlaggedWords] = useState<string[]>([]);
 
-  function update<K extends keyof ArticleFormInput>(key: K, value: ArticleFormInput[K]) {
+  function update<K extends keyof ArticleFormInput>(
+    key: K,
+    value: ArticleFormInput[K],
+  ) {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
@@ -104,11 +109,17 @@ export function ArticleForm({ initialData, articleId }: ArticleFormProps) {
     setError(null);
     setFlaggedWords([]);
 
-    const payload: ArticleFormInput = { ...form, status };
+    const payload: ArticleFormInput = {
+      ...form,
+      status,
+      media: selectedMedia,
+    };
 
     try {
       const res = await fetch(
-        isEdit ? `/api/contributor/articles/${articleId}` : "/api/contributor/articles",
+        isEdit
+          ? `/api/contributor/articles/${articleId}`
+          : "/api/contributor/articles",
         {
           method: isEdit ? "PATCH" : "POST",
           headers: { "Content-Type": "application/json" },
@@ -121,7 +132,9 @@ export function ArticleForm({ initialData, articleId }: ArticleFormProps) {
         setError(data.error ?? "Gagal menyimpan artikel");
         if (data.flagged) {
           setFlaggedWords(
-            Array.from(new Set((data.flagged as { word: string }[]).map((f) => f.word))),
+            Array.from(
+              new Set((data.flagged as { word: string }[]).map((f) => f.word)),
+            ),
           );
         }
         return;
@@ -162,7 +175,11 @@ export function ArticleForm({ initialData, articleId }: ArticleFormProps) {
           className="relative aspect-[16/9] max-w-md rounded-2xl overflow-hidden bg-white/5 border border-dashed border-white/15 flex items-center justify-center cursor-pointer group"
         >
           {preview ? (
-            <img src={preview} alt="Cover" className="w-full h-full object-cover" />
+            <img
+              src={preview}
+              alt="Cover"
+              className="w-full h-full object-cover"
+            />
           ) : (
             <div className="flex flex-col items-center gap-1.5 text-muted-foreground">
               <ImagePlus className="w-6 h-6" />
@@ -245,6 +262,18 @@ export function ArticleForm({ initialData, articleId }: ArticleFormProps) {
         </p>
       </div>
 
+      {/* Media picker — tautkan film/series */}
+      <div>
+        <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
+          Film / Series Terkait
+        </label>
+        <p className="text-[11px] text-muted-foreground mb-2">
+          Tautkan film atau series yang dibahas di artikel ini — akan tampil
+          sebagai daftar rekomendasi di halaman detail artikel.
+        </p>
+        <MediaPicker value={selectedMedia} onChange={setSelectedMedia} />
+      </div>
+
       {/* Topic + Lang */}
       <div className="grid sm:grid-cols-3 gap-4">
         <div>
@@ -253,7 +282,9 @@ export function ArticleForm({ initialData, articleId }: ArticleFormProps) {
           </label>
           <select
             value={form.topic_type}
-            onChange={(e) => update("topic_type", e.target.value as TopicType | "")}
+            onChange={(e) =>
+              update("topic_type", e.target.value as TopicType | "")
+            }
             className="w-full px-3 py-2.5 rounded-xl bg-card border border-border text-sm focus:outline-none focus:border-primary/60"
           >
             {TOPIC_OPTIONS.map((t) => (

@@ -6,7 +6,8 @@
  *   chain      — opsional, filter chain (XXI | CGV | Cinepolis)
  *   show_date  — opsional, "YYYY-MM-DD" (default: hari ini WIB)
  *   lang       — "id" | "en" (default: "en")
- *   type       — "cities" | "cinemas" | "movies" | "upcoming" (default: "movies")
+ *   type       — "cities" | "cinemas" | "movies" | "upcoming" | "cinema_showtimes" (default: "movies")
+ *   cinema_id  — wajib untuk type="cinema_showtimes"
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -17,6 +18,7 @@ import {
   fetchComingSoonGrouped,
   fetchUpcomingMovies,
   fetchMovieDetail,
+  fetchCinemaDetailWithShowtimes,
 } from "@/lib/cinema-db";
 
 export const revalidate = 120;
@@ -91,6 +93,35 @@ export async function GET(req: NextRequest) {
           },
         },
       );
+    }
+
+    // ── 2b. Cinema detail + showtimes (untuk modal) ──────────────────────────
+    if (type === "cinema_showtimes") {
+      const cinema_id = searchParams.get("cinema_id") ?? "";
+      if (!cinema_id) {
+        return NextResponse.json(
+          { error: "cinema_id is required" },
+          { status: 400 },
+        );
+      }
+      const result = await fetchCinemaDetailWithShowtimes({
+        cinemaId: cinema_id,
+        show_date: show_date || undefined,
+      });
+
+      if (!result.cinema) {
+        return NextResponse.json(
+          { error: "Cinema not found" },
+          { status: 404 },
+        );
+      }
+
+      return NextResponse.json(result, {
+        status: 200,
+        headers: {
+          "Cache-Control": "public, s-maxage=60, stale-while-revalidate=180",
+        },
+      });
     }
 
     // ── 3. Upcoming movies (from cinema_movies, show_date > today) ────────────

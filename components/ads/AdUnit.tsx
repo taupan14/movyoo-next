@@ -1,62 +1,23 @@
+// components/ads/AdUnit.tsx
 "use client";
-
-import { useEffect, useRef } from "react";
 
 interface AdUnitProps {
   scriptSrc: string;
   containerId?: string;
   minHeight?: number;
   className?: string;
-  once?: boolean;
+  once?: boolean; // sudah tidak relevan lagi, tapi dibiarkan agar tidak break props di caller
 }
 
 export default function AdUnit({
   scriptSrc,
-  containerId,
+  containerId = "ad-container",
   minHeight = 0,
   className = "",
-  once = true,
 }: AdUnitProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const injectedRef = useRef(false);
-
-  // Adsterra blocks requests from localhost (CORS) — skip in dev
   const isDev = process.env.NODE_ENV === "development";
 
-  useEffect(() => {
-    if (isDev) return;
-    if (!containerRef.current || !scriptSrc) return;
-    if (once && injectedRef.current) return;
-
-    injectedRef.current = true;
-    const container = containerRef.current;
-
-    const script = document.createElement("script");
-    script.src = scriptSrc;
-    script.async = true;
-    script.setAttribute("data-cfasync", "false");
-
-    script.onerror = () => {
-      console.warn("[AdUnit] Failed to load ad script:", scriptSrc);
-      injectedRef.current = false;
-    };
-
-    try {
-      container.appendChild(script);
-    } catch (err) {
-      console.warn("[AdUnit] Ad initialization error:", err);
-    }
-
-    return () => {
-      if (!once) {
-        container.innerHTML = "";
-        injectedRef.current = false;
-      }
-    };
-  }, [scriptSrc, once, isDev]);
-
-  // Di dev, render placeholder supaya layout tidak collapse
-  if (isDev) {
+  if (isDev || !scriptSrc) {
     return (
       <div
         style={{
@@ -78,13 +39,44 @@ export default function AdUnit({
     );
   }
 
+  // HTML mini yang isinya CUMA script iklan + container-nya.
+  // Ini yang akan jadi "isi etalase kaca" — terpisah total dari window utama.
+  const adDocument = `<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      html, body { margin: 0; padding: 0; background: transparent; overflow: hidden; }
+    </style>
+  </head>
+  <body>
+    <div id="${containerId}"></div>
+    <script async data-cfasync="false" src="${scriptSrc}"><\/script>
+  </body>
+</html>`;
+
   return (
-    <div
-      ref={containerRef}
-      id={containerId}
+    <iframe
+      srcDoc={adDocument}
       className={className}
-      style={{ minHeight, overflow: "hidden" }}
-      aria-label="Advertisement"
+      title="Advertisement"
+      loading="lazy"
+      referrerPolicy="no-referrer"
+      // ── INI KUNCINYA ──
+      // allow-scripts  : wajib, supaya script iklan bisa jalan & render banner
+      // allow-same-origin : supaya Adsterra bisa set cookie/localStorage utk targeting
+      // TIDAK ADA allow-top-navigation, allow-popups, allow-popups-to-escape-sandbox
+      // → artinya script di dalam iframe ini SECARA TEKNIS TIDAK BISA:
+      //   - redirect window.top / halaman utama
+      //   - window.open() tab/window baru
+      //   - keluar dari sandbox dengan cara apapun
+      sandbox="allow-scripts allow-same-origin"
+      style={{
+        width: "100%",
+        minHeight,
+        border: "none",
+        display: "block",
+      }}
     />
   );
 }

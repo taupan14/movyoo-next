@@ -32,6 +32,10 @@ import {
 import type { ArticleReview } from "@/lib/article-reviews-db";
 import type { ArticleDetail } from "@/lib/articles-db";
 
+import type { ReviewReply, ReplyProfile } from "@/lib/review-replies-db";
+import { CornerDownRight } from "lucide-react";
+import { buildReplyTree } from "@/lib/review-replies-db";
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function timeAgo(iso: string): string {
@@ -68,6 +72,7 @@ interface ReviewCtx {
   handleMentionSelect: (id: number, title: string) => void;
   textareaRef: React.RefObject<HTMLTextAreaElement>;
   handleCommentChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
+  bumpReplyCount: (reviewId: number, delta: number) => void; // ← BARU
 }
 
 const ReviewContext = createContext<ReviewCtx | null>(null);
@@ -195,6 +200,16 @@ export function ReviewProvider({
     await fetchReviews();
   }
 
+  function bumpReplyCount(reviewId: number, delta: number) {
+    setReviews((prev) =>
+      prev.map((r) =>
+        r.id === reviewId
+          ? { ...r, reply_count: Math.max((r.reply_count ?? 0) + delta, 0) }
+          : r,
+      ),
+    );
+  }
+
   return (
     <ReviewContext.Provider
       value={{
@@ -217,6 +232,7 @@ export function ReviewProvider({
         handleMentionSelect,
         textareaRef,
         handleCommentChange,
+        bumpReplyCount,
       }}
     >
       {children}
@@ -394,6 +410,435 @@ export function ReviewForm() {
   );
 }
 
+// ─── Reply ke Review (nempel di bawah tiap ReviewCard) ─────────────────────
+
+function replyDisplayName(p: ReplyProfile | null | undefined) {
+  return p?.display_name ?? "Pengguna";
+}
+
+function renderReplyContent(text: string) {
+  return text.split(/(@[a-zA-Z0-9_.]+)/g).map((part, i) =>
+    part.startsWith("@") ? (
+      <span key={i} className="text-primary font-medium">
+        {part}
+      </span>
+    ) : (
+      <span key={i}>{part}</span>
+    ),
+  );
+}
+
+// ─── Inline reply form — dipakai berulang di tiap level nesting ─────────
+
+function InlineReplyForm({
+  onSubmit,
+  onCancel,
+  submitting,
+  autoFocus,
+}: {
+  onSubmit: (content: string, mentionedUserIds: string[]) => Promise<void>;
+  onCancel: () => void;
+  submitting: boolean;
+  autoFocus?: boolean;
+}) {
+  const [content, setContent] = useState("");
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [mentionResults, setMentionResults] = useState<ReplyProfile[]>([]);
+  const [mentionedMap, setMentionedMap] = useState<
+    Map<string, ReplyProfile & { id: string }>
+  >(new Map());
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (autoFocus) textareaRef.current?.focus();
+  }, [autoFocus]);
+
+  useEffect(() => {
+    if (mentionQuery === null) return setMentionResults([]);
+    const t = setTimeout(async () => {
+      if (!mentionQuery) return setMentionResults([]);
+      try {
+        const res = await fetch(
+          `/api/users/search?q=${encodeURIComponent(mentionQuery)}`,
+        );
+        const json = await res.json();
+        setMentionResults(json.users ?? []);
+      } catch {
+        setMentionResults([]);
+      }
+    }, 250);
+    return () => clearTimeout(t);
+  }, [mentionQuery]);
+
+  function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    const val = e.target.value;
+    setContent(val);
+    const cursor = e.target.selectionStart;
+    const match = val.slice(0, cursor).match(/@([^\s@]*)$/);
+    setMentionQuery(match ? match[1] : null);
+  }
+
+  function handleMentionSelect(
+    u: ReplyProfile & { id: string; username?: string | null },
+  ) {
+    const cursor = textareaRef.current?.selectionStart ?? content.length;
+    const upTo = content.slice(0, cursor);
+    const match = upTo.match(/@([^\s@]*)$/);
+    if (!match) return;
+    const handle = u.username ?? u.display_name ?? "user";
+    setContent(
+      `${upTo.slice(0, match.index)}@${handle} ${content.slice(cursor)}`,
+    );
+    setMentionQuery(null);
+    setMentionedMap((prev) => new Map(prev).set(handle, u));
+  }
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!content.trim()) return;
+    const mentionedUserIds = Array.from(mentionedMap.entries())
+      .filter(([handle]) => content.includes(`@${handle}`))
+      .map(([, u]) => u.id);
+    await onSubmit(content.trim(), mentionedUserIds);
+    setContent("");
+  }
+
+  return (
+    <form onSubmit={submit} className="flex flex-col gap-1.5 mt-2">
+      <div className="relative">
+        <textarea
+          ref={textareaRef}
+          value={content}
+          onChange={handleChange}
+          placeholder="Tulis balasan… ketik @ untuk mention"
+          rows={1}
+          maxLength={1000}
+          className="w-full px-2.5 py-1.5 rounded-lg bg-background border border-border text-[11px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/60 resize-none transition-colors"
+        />
+        {mentionQuery !== null && mentionResults.length > 0 && (
+          <div className="absolute bottom-full mb-1 left-0 w-56 rounded-lg bg-popover border border-border shadow-xl z-50 overflow-hidden">
+            {mentionResults.map((u: any) => (
+              <button
+                key={u.id}
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  handleMentionSelect(u);
+                }}
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 text-left hover:bg-white/5"
+              >
+                <span className="text-[10px] text-foreground">
+                  {replyDisplayName(u)}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="flex items-center gap-2 self-end">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+        >
+          Batal
+        </button>
+        <button
+          type="submit"
+          disabled={submitting || !content.trim()}
+          className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary text-white text-[11px] font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
+        >
+          {submitting ? (
+            <Loader2 className="w-3 h-3 animate-spin" />
+          ) : (
+            <Send className="w-3 h-3" />
+          )}
+          Kirim
+        </button>
+      </div>
+    </form>
+  );
+}
+
+// ─── Node reply — recursive, full nested ────────────────────────────────
+
+function ReplyNode({
+  node,
+  depth,
+  onReplySubmit,
+  onDelete,
+  submittingId,
+}: {
+  node: ReviewReply & { children: any[] };
+  depth: number;
+  onReplySubmit: (
+    parentReplyId: number,
+    content: string,
+    mentionedUserIds: string[],
+  ) => Promise<void>;
+  onDelete: (id: number) => Promise<void>;
+  submittingId: number | null;
+}) {
+  const { user, openAuthModal } = useAuth();
+  const [showForm, setShowForm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const isOwn = node.user_id === user?.id;
+
+  async function handleDeleteClick() {
+    setDeleting(true);
+    try {
+      await onDelete(node.id);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  return (
+    <div className={cn(depth > 0 && "mt-2.5")}>
+      <div className="flex gap-2">
+        <div className="shrink-0 w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold text-primary overflow-hidden">
+          {node.profile?.avatar_url ? (
+            <img
+              src={node.profile.avatar_url}
+              alt=""
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            replyDisplayName(node.profile)[0]?.toUpperCase()
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="rounded-lg bg-background/60 border border-border px-2.5 py-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] font-semibold text-foreground">
+                {replyDisplayName(node.profile)}
+              </span>
+              {isOwn && !node.is_deleted && (
+                <button
+                  onClick={handleDeleteClick}
+                  disabled={deleting}
+                  className="text-muted-foreground hover:text-red-400 transition-colors disabled:opacity-50"
+                >
+                  {deleting ? (
+                    <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                  ) : (
+                    <Trash2 className="w-2.5 h-2.5" />
+                  )}
+                </button>
+              )}
+            </div>
+            <p
+              className={cn(
+                "text-[11px] leading-relaxed",
+                node.is_deleted
+                  ? "text-muted-foreground italic"
+                  : "text-muted-foreground",
+              )}
+            >
+              {node.is_deleted
+                ? node.content
+                : renderReplyContent(node.content)}
+            </p>
+          </div>
+          <div className="flex items-center gap-2 mt-1 px-0.5">
+            <span className="text-[10px] text-muted-foreground">
+              {timeAgo(node.created_at)}
+            </span>
+            {!node.is_deleted && (
+              <button
+                onClick={() => {
+                  if (!user) return openAuthModal("signin");
+                  setShowForm((v) => !v);
+                }}
+                className="text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Balas
+              </button>
+            )}
+          </div>
+
+          {showForm && (
+            <InlineReplyForm
+              autoFocus
+              submitting={submittingId === node.id}
+              onCancel={() => setShowForm(false)}
+              onSubmit={async (content, mentionedUserIds) => {
+                await onReplySubmit(node.id, content, mentionedUserIds);
+                setShowForm(false);
+              }}
+            />
+          )}
+
+          {node.children.length > 0 && (
+            <div className="mt-1 pl-3 border-l border-border/60">
+              {node.children.map((child: any) => (
+                <ReplyNode
+                  key={child.id}
+                  node={child}
+                  depth={depth + 1}
+                  onReplySubmit={onReplySubmit}
+                  onDelete={onDelete}
+                  submittingId={submittingId}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── ReviewReplies — root thread di bawah tiap ReviewCard ───────────────
+
+function ReviewReplies({
+  reviewId,
+  replyCount,
+  forceOpen,
+}: {
+  reviewId: number;
+  replyCount: number;
+  forceOpen?: boolean;
+}) {
+  const { user, openAuthModal } = useAuth();
+  const { bumpReplyCount } = useReview();
+  const [open, setOpen] = useState(!!forceOpen);
+  const [replies, setReplies] = useState<ReviewReply[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [showRootForm, setShowRootForm] = useState(false);
+  const [submittingId, setSubmittingId] = useState<number | null>(null);
+
+  const fetchReplies = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/reviews/${reviewId}/replies`, {
+        cache: "no-store",
+      });
+      const json = await res.json();
+      setReplies(json.replies ?? []);
+    } finally {
+      setLoading(false);
+    }
+  }, [reviewId]);
+
+  useEffect(() => {
+    if (open) fetchReplies();
+  }, [open, fetchReplies]);
+
+  useEffect(() => {
+    if (forceOpen) setOpen(true);
+  }, [forceOpen]);
+
+  async function postReply(
+    parentReplyId: number | null,
+    content: string,
+    mentionedUserIds: string[],
+  ) {
+    setSubmittingId(parentReplyId ?? -1);
+    try {
+      const res = await fetch(`/api/reviews/${reviewId}/replies`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          content,
+          parent_reply_id: parentReplyId,
+          mentioned_user_ids: mentionedUserIds,
+        }),
+      });
+      if (res.ok) {
+        await fetchReplies();
+        bumpReplyCount(reviewId, 1); // ← BARU
+      }
+    } finally {
+      setSubmittingId(null);
+    }
+  }
+
+  async function handleDelete(replyId: number) {
+    await fetch(`/api/reviews/${reviewId}/replies/${replyId}`, {
+      method: "DELETE",
+      credentials: "include",
+    });
+    await fetchReplies();
+    bumpReplyCount(reviewId, -1);
+  }
+
+  const tree = buildReplyTree(replies);
+
+  return (
+    <div className="mt-2">
+      {!open ? (
+        replyCount > 0 ? (
+          <button
+            onClick={() => setOpen(true)}
+            className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <MessageSquare className="w-3 h-3" />
+            {replyCount} balasan
+          </button>
+        ) : (
+          <button
+            onClick={() => {
+              if (!user) return openAuthModal("signin");
+              setOpen(true);
+              setShowRootForm(true);
+            }}
+            className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <CornerDownRight className="w-3 h-3" />
+            Balas
+          </button>
+        )
+      ) : (
+        <div className="pl-4 border-l border-border/60 flex flex-col gap-2.5">
+          {loading ? (
+            <div className="h-10 rounded-lg bg-white/5 animate-pulse" />
+          ) : (
+            tree.map((node) => (
+              <ReplyNode
+                key={node.id}
+                node={node}
+                depth={0}
+                onReplySubmit={(parentId, content, ids) =>
+                  postReply(parentId, content, ids)
+                }
+                onDelete={handleDelete}
+                submittingId={submittingId}
+              />
+            ))
+          )}
+
+          {user ? (
+            showRootForm || tree.length === 0 ? (
+              <InlineReplyForm
+                autoFocus
+                submitting={submittingId === -1}
+                onCancel={() => setShowRootForm(false)}
+                onSubmit={(content, ids) => postReply(null, content, ids)}
+              />
+            ) : (
+              <button
+                onClick={() => setShowRootForm(true)}
+                className="self-start text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+              >
+                + Tambah balasan
+              </button>
+            )
+          ) : (
+            <button
+              onClick={() => openAuthModal("signin")}
+              className="text-[11px] text-muted-foreground hover:text-foreground text-left"
+            >
+              Login untuk membalas
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── ReviewCard ───────────────────────────────────────────────────────────────
 
 function ReviewCard({
@@ -431,8 +876,25 @@ function ReviewCard({
     });
   }
 
+  // ── BARU: filter tag yang SUDAH disebut inline di teks, biar nggak dobel ──
+  const inlineMentionedTitles = new Set(
+    items
+      .map((it) => it.media.title)
+      .filter((title) =>
+        review.comment?.toLowerCase().includes(`@${title.toLowerCase()}`),
+      ),
+  );
+
+  const extraTaggedIds = (review.tagged_movie_ids ?? []).filter((mid) => {
+    const it = items.find((x) => x.id === mid);
+    return it && !inlineMentionedTitles.has(it.media.title);
+  });
+
   return (
-    <div className="flex gap-3 p-4 rounded-xl bg-card border border-border">
+    <div
+      id={`review-${review.id}`}
+      className="flex gap-3 p-4 rounded-xl bg-card border border-border"
+    >
       <div className="shrink-0 w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary overflow-hidden">
         {review.profile?.avatar_url ? (
           <img
@@ -461,6 +923,12 @@ function ReviewCard({
             </span>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            {review.reply_count > 0 && (
+              <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                <MessageSquare className="w-3 h-3" />
+                {review.reply_count}
+              </span>
+            )}
             <span className="text-[10px] text-muted-foreground">
               {timeAgo(review.created_at)}
             </span>
@@ -480,9 +948,10 @@ function ReviewCard({
             {renderComment(review.comment)}
           </p>
         )}
-        {(review.tagged_movie_ids?.length ?? 0) > 0 && (
+
+        {extraTaggedIds.length > 0 && (
           <div className="flex flex-wrap gap-1 mt-2">
-            {review.tagged_movie_ids.map((mid) => {
+            {extraTaggedIds.map((mid) => {
               const it = items.find((x) => x.id === mid);
               if (!it) return null;
               return (
@@ -497,6 +966,11 @@ function ReviewCard({
             })}
           </div>
         )}
+
+        <ReviewReplies
+          reviewId={review.id}
+          replyCount={review.reply_count ?? 0}
+        />
       </div>
     </div>
   );

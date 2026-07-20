@@ -773,3 +773,135 @@ export async function fetchMovieDetail(
     companies,
   };
 }
+
+// ─── CINEMA DETAIL + SHOWTIMES (untuk modal detail bioskop) ──────────────────
+
+export interface CinemaShowtimeSlot {
+  show_time: string; // "HH:MM:SS"
+  format: string;
+  studio_id: number | null;
+  ticket_price: number | null;
+}
+
+export interface CinemaMovieShowtimes {
+  movie_id: number | null;
+  cinema_movie_id: string;
+  title: string;
+  genre: string;
+  duration: string;
+  age_rating: string;
+  poster_path: string | null;
+  showtimes: CinemaShowtimeSlot[];
+}
+
+export interface CinemaDetailResult {
+  cinema: CinemaItem | null;
+  show_date_used: string;
+  is_fallback: boolean;
+  movies: CinemaMovieShowtimes[];
+}
+
+/**
+ * Ambil detail lengkap satu bioskop + daftar film & showtime (jam + harga)
+ * untuk tanggal tertentu. Fallback mundur ke tanggal terbaru yang ada datanya
+ * jika show_date yang diminta kosong (pola sama seperti fetchNowPlayingGrouped).
+ */
+export async function fetchCinemaDetailWithShowtimes(params: {
+  cinemaId: string;
+  show_date?: string;
+}): Promise<CinemaDetailResult> {
+  const { cinemaId, show_date } = params;
+  const today = show_date ?? todayWIB();
+
+  const { data: cinemaData, error: cinemaError } = await supabase
+    .from("cinemas")
+    .select(
+      "id, name, chain, city, address, lat, lng, google_maps_url, booking_url, source",
+    )
+    .eq("id", cinemaId)
+    .single();
+
+  if (cinemaError || !cinemaData) {
+    console.error(
+      "[cinema-db] fetchCinemaDetailWithShowtimes – cinema:",
+      cinemaError?.message,
+    );
+    return {
+      cinema: null,
+      show_date_used: today,
+      is_fallback: false,
+      movies: [],
+    };
+  }
+
+  const found = await findLatestDateWithData([cinemaId], today);
+
+  if (!found) {
+    return {
+      cinema: cinemaData,
+      show_date_used: today,
+      is_fallback: false,
+      movies: [],
+    };
+  }
+
+  const cmList = await queryCinemaMovies([cinemaId], found.date);
+
+  if (cmList.length === 0) {
+    return {
+      cinema: cinemaData,
+      show_date_used: found.date,
+      is_fallback: found.isFallback,
+      movies: [],
+    };
+  }
+
+  const cmIds = cmList.map((cm: any) => cm.id as string);
+
+  const { data: stData, error: stError } = await supabase
+    .from("showtimes")
+    .select("cinema_movie_id, show_time, format, studio_id, ticket_price")
+    .in("cinema_movie_id", cmIds)
+    .eq("show_date", found.date)
+    .order("show_time", { ascending: true });
+
+  if (stError) {
+    console.error(
+      "[cinema-db] fetchCinemaDetailWithShowtimes – showtimes:",
+      stError.message,
+    );
+  }
+
+  const showtimeMap = new Map<string, CinemaShowtimeSlot[]>();
+  for (const st of stData ?? []) {
+    const key = (st as any).cinema_movie_id as string;
+    if (!showtimeMap.has(key)) showtimeMap.set(key, []);
+    showtimeMap.get(key)!.push({
+      show_time: (st as any).show_time,
+      format: (st as any).format,
+      studio_id: (st as any).studio_id,
+      ticket_price: (st as any).ticket_price,
+    });
+  }
+
+  const movies: CinemaMovieShowtimes[] = cmList.map((cm: any) => {
+    const movie = cm.movies as any;
+    return {
+      movie_id: cm.movie_id,
+      cinema_movie_id: cm.id,
+      title: cm.title,
+      genre: cm.genre ?? "",
+      duration: cm.duration ?? "",
+      age_rating: cm.age_rating ?? "",
+      poster_path: movie?.poster_path ?? null,
+      showtimes: showtimeMap.get(cm.id) ?? [],
+    };
+  });
+
+  return {
+    cinema: cinemaData,
+    show_date_used: found.date,
+    is_fallback: found.isFallback,
+    movies,
+  };
+}

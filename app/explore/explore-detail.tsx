@@ -311,6 +311,37 @@ async function apiFetchCinemas(
   return data.cinemas ?? [];
 }
 
+// api client
+async function apiFetchCinemaShowtimes(cinemaId: string, showDate?: string) {
+  const params = new URLSearchParams({
+    type: "cinema_showtimes",
+    cinema_id: cinemaId,
+  });
+  if (showDate) params.set("show_date", showDate);
+  const res = await fetch(`/api/cinema?${params.toString()}`);
+  if (!res.ok) throw new Error("Failed to fetch cinema showtimes");
+  return res.json() as Promise<{
+    cinema: Cinema;
+    show_date_used: string;
+    is_fallback: boolean;
+    movies: {
+      movie_id: number | null;
+      cinema_movie_id: string;
+      title: string;
+      genre: string;
+      duration: string;
+      age_rating: string;
+      poster_path: string | null;
+      showtimes: {
+        show_time: string;
+        format: string;
+        studio_id: number | null;
+        ticket_price: number | null;
+      }[];
+    }[];
+  }>;
+}
+
 interface MoviesApiResult {
   nowPlaying: NowPlayingMovie[];
   nowPlayingByChain: NowPlayingByChain[];
@@ -420,6 +451,29 @@ function getProfileUrl(path: string | null | undefined): string | null {
   return `https://image.tmdb.org/t/p/w185${path}`;
 }
 
+function groupByFormat(
+  showtimes: {
+    show_time: string;
+    format: string;
+    ticket_price: number | null;
+  }[],
+) {
+  const map = new Map<
+    string,
+    { show_time: string; ticket_price: number | null }[]
+  >();
+  for (const st of showtimes) {
+    if (!map.has(st.format)) map.set(st.format, []);
+    map
+      .get(st.format)!
+      .push({ show_time: st.show_time, ticket_price: st.ticket_price });
+  }
+  return Array.from(map.entries()).map(([format, slots]) => ({
+    format,
+    slots,
+  }));
+}
+
 // ─── Skeleton ─────────────────────────────────────────────────────────────────
 
 function GridSkeleton() {
@@ -476,7 +530,7 @@ function TrailerModal({ videoId, title, onClose }: TrailerModalProps) {
               src={`https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0`}
               title={title}
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-              allowFullScreen
+              // allowFullScreen
               className="absolute inset-0 w-full h-full"
             />
           </div>
@@ -1274,7 +1328,7 @@ function TrailerPlayer({
       title={`${title} Trailer`}
       className="w-full h-full"
       allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
-      allowFullScreen
+      // allowFullScreen
       sandbox="allow-scripts allow-same-origin allow-presentation allow-popups"
     />
   );
@@ -1808,6 +1862,224 @@ function NowPlayingDetailModal({
               ))
             )}
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Cinema: Detail Showtimes Modal ───────────────────────────────────────────
+
+function CinemaDetailModal({
+  cinema,
+  showDate,
+  onClose,
+  locale,
+}: {
+  cinema: Cinema;
+  showDate?: string;
+  onClose: () => void;
+  locale: string;
+}) {
+  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<Awaited<
+    ReturnType<typeof apiFetchCinemaShowtimes>
+  > | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    apiFetchCinemaShowtimes(cinema.id, showDate)
+      .then((res) => {
+        if (active) setData(res);
+      })
+      .catch(console.error)
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [cinema.id, showDate]);
+
+  useEffect(() => {
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, []);
+
+  const mapsUrl =
+    cinema.google_maps_url ||
+    `https://www.google.com/maps?q=${cinema.lat},${cinema.lng}`;
+  const ticketUrl = cinema.booking_url || CHAIN_BOOKING[cinema.chain];
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/50"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md bg-background rounded-t-2xl max-h-[85vh] flex flex-col animate-slide-up"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex justify-center pt-2.5 pb-1">
+          <div className="w-9 h-1 rounded-full bg-white/20" />
+        </div>
+
+        <div className="px-5 pb-3 border-b border-white/10">
+          <div className="flex items-center gap-2 mb-1">
+            <Badge
+              className={cn(
+                "text-[10px] px-1.5 py-0 h-4",
+                CHAIN_COLORS[cinema.chain],
+              )}
+            >
+              {cinema.chain}
+            </Badge>
+            <span className="text-xs text-muted-foreground">{cinema.city}</span>
+          </div>
+          <p className="font-semibold text-base">{cinema.name}</p>
+          <p className="text-xs text-muted-foreground mt-1 flex gap-1.5">
+            {/* <MapPin className="w-3.5 h-3.5 shrink-0 mt-0.5" /> */}
+            {cinema.address || "Data alamat belum tersedia"}
+          </p>
+        </div>
+
+        <div className="px-5 py-3 overflow-y-auto flex-1">
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-2">
+            {/* {locale === "id" ? "Jadwal" : "Showtimes"}{" "} */}
+            {data?.show_date_used
+              ? formatDate(data.show_date_used, locale)
+              : ""}
+          </p>
+
+          {loading ? (
+            <div className="space-y-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={i} className="h-14 rounded-lg" />
+              ))}
+            </div>
+          ) : data && data.movies.length > 0 ? (
+            <>
+              <div className="space-y-1">
+                {data.movies.map((movie) => {
+                  const formatGroups = groupByFormat(movie.showtimes);
+                  const posterUrl =
+                    movie.poster_path?.startsWith("http://") ||
+                    movie.poster_path?.startsWith("https://")
+                      ? movie.poster_path
+                      : `https://image.tmdb.org/t/p/w154${movie.poster_path}`;
+                  return (
+                    <div
+                      key={movie.cinema_movie_id}
+                      className="flex gap-3 py-2"
+                    >
+                      <div className="w-15 shrink-0">
+                        {movie.poster_path ? (
+                          <img
+                            src={posterUrl}
+                            alt={movie.title}
+                            className="w-15 h-[95px] rounded-md bg-white/5 object-cover"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <div className="w-15 aspect-[2/3] rounded-md bg-white/5 flex items-center justify-center">
+                            <Film className="w-4 h-4 text-muted-foreground" />
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="min-w-0 flex-1">
+                        <div className="flex justify-between items-baseline gap-2 mb-3">
+                          <p className="font-medium text-sm truncate">
+                            {movie.title}
+                          </p>
+                          <span className="text-[11px] text-muted-foreground shrink-0">
+                            {movie.age_rating}
+                          </span>
+                        </div>
+
+                        {formatGroups.map((g) => {
+                          const price = g.slots.find(
+                            (s) => s.ticket_price != null,
+                          )?.ticket_price;
+                          return (
+                            <div
+                              key={g.format}
+                              className="flex items-center gap-2 mt-1.5"
+                            >
+                              {/* <span className="text-[11px] text-muted-foreground w-9 shrink-0">
+                              {g.format}
+                            </span> */}
+                              <div className="flex flex-col gap-1.5">
+                                <div className="flex flex-wrap gap-1.5 items-center">
+                                  {g.slots.map((s, i) => (
+                                    <span
+                                      key={i}
+                                      className="text-xs px-2 py-1 rounded-md bg-white/5 border border-white/10"
+                                    >
+                                      {formatShowTime(s.show_time)}
+                                    </span>
+                                  ))}
+                                </div>
+                                {price != null && (
+                                  <div className="flex items-center mt-3">
+                                    <span className="text-[11px] text-muted-foreground">
+                                      {locale === "id"
+                                        ? "Harga tiket"
+                                        : "Ticket price"}
+                                    </span>
+                                    <span className="text-[12px] font-semibold text-emerald-400 ms-2">
+                                      {formatPrice(price, locale)}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <p className="text-[11px] italic text-muted-foreground/70 mt-3 pt-3 border-t border-white/10">
+                {locale === "id"
+                  ? "* Harga sewaktu-waktu bisa berubah."
+                  : "* Prices are subject to change without notice."}
+              </p>
+            </>
+          ) : (
+            <div className="text-center py-8 text-muted-foreground text-sm">
+              {locale === "id"
+                ? "Tidak ada jadwal untuk bioskop ini."
+                : "No showtimes for this cinema."}
+            </div>
+          )}
+        </div>
+
+        <div className="flex gap-2 px-5 pt-3 pb-4 border-t border-white/10">
+          <a
+            href={mapsUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex-1 text-center text-xs font-semibold py-2.5 rounded-lg bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 transition-colors"
+          >
+            <Navigation className="w-3.5 h-3.5 inline mr-1" />
+            {locale === "id" ? "Lokasi Maps" : "Map location"}
+          </a>
+
+          <a
+            href={ticketUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex-1 text-center text-xs font-semibold py-2.5 rounded-lg bg-primary/20 text-primary hover:bg-primary/30 transition-colors"
+          >
+            <ExternalLink className="w-3.5 h-3.5 inline mr-1" />
+            {locale === "id" ? "Beli Tiket" : "Buy ticket"}
+          </a>
         </div>
       </div>
     </div>
@@ -2510,54 +2782,6 @@ function CinemaTabContent({ locale }: { locale: string }) {
         )}
       </div>
 
-      {/* Coming Soon */}
-      <div className="px-4 lg:px-6 mb-10">
-        <div className="flex items-center gap-2 mb-4">
-          <Sparkles className="w-5 h-5 text-violet-400" />
-          <h2 className="text-lg font-bold text-white">
-            {locale === "id" ? "Segera Hadir" : "Coming Soon"}
-          </h2>
-        </div>
-
-        {loadingUpcoming ? (
-          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="space-y-2">
-                <Skeleton className="aspect-[2/3] w-full rounded-lg" />
-                <Skeleton className="h-3 w-3/4" />
-              </div>
-            ))}
-          </div>
-        ) : upcomingMovies.length > 0 ? (
-          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
-            {upcomingMovies.map((movie) => (
-              <CinemaMovieCard
-                key={movie.id}
-                movie={movie}
-                onClick={() => setSelectedUpcoming(movie)}
-                locale={locale}
-                badge={
-                  movie.release_date ? (
-                    <Badge
-                      className="bg-violet-500/80 text-white border-0 text-[9px] px-1.5 backdrop-blur-sm"
-                      variant="outline"
-                    >
-                      {formatDateShort(movie.release_date, locale)}
-                    </Badge>
-                  ) : undefined
-                }
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="text-center py-8 text-muted-foreground text-sm">
-            {locale === "id"
-              ? "Belum ada film yang akan tayang."
-              : "No upcoming movies yet."}
-          </div>
-        )}
-      </div>
-
       {/* Cinema List */}
       {(loadingCinemas || filteredCinemas.length > 0) && (
         <div className="px-4 lg:px-6 mb-8">
@@ -2623,33 +2847,6 @@ function CinemaTabContent({ locale }: { locale: string }) {
                     </div>
                     <MapPin className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
                   </div>
-
-                  {selectedCinema?.id === cinema.id && (
-                    <div className="flex gap-2 mt-3 pt-3 border-t border-white/10">
-                      {cinema.google_maps_url && (
-                        <a
-                          href={cinema.google_maps_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          className="flex-1 text-center text-xs font-semibold py-1.5 rounded-lg bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 transition-colors"
-                        >
-                          <Navigation className="w-3 h-3 inline mr-1" />
-                          {locale === "id" ? "Rute" : "Route"}
-                        </a>
-                      )}
-                      <a
-                        href={cinema.booking_url || CHAIN_BOOKING[cinema.chain]}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                        className="flex-1 text-center text-xs font-semibold py-1.5 rounded-lg bg-primary/20 text-primary hover:bg-primary/30 transition-colors"
-                      >
-                        <ExternalLink className="w-3 h-3 inline mr-1" />
-                        {locale === "id" ? "Beli Tiket" : "Buy Ticket"}
-                      </a>
-                    </div>
-                  )}
                 </div>
               ))}
             </div>
@@ -2657,10 +2854,58 @@ function CinemaTabContent({ locale }: { locale: string }) {
         </div>
       )}
 
+      {/* Coming Soon */}
+      <div className="px-4 lg:px-6 mb-10">
+        <div className="flex items-center gap-2 mb-4">
+          <Sparkles className="w-5 h-5 text-violet-400" />
+          <h2 className="text-lg font-bold text-white">
+            {locale === "id" ? "Segera Hadir" : "Coming Soon"}
+          </h2>
+        </div>
+
+        {loadingUpcoming ? (
+          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="space-y-2">
+                <Skeleton className="aspect-[2/3] w-full rounded-lg" />
+                <Skeleton className="h-3 w-3/4" />
+              </div>
+            ))}
+          </div>
+        ) : upcomingMovies.length > 0 ? (
+          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
+            {upcomingMovies.map((movie) => (
+              <CinemaMovieCard
+                key={movie.id}
+                movie={movie}
+                onClick={() => setSelectedUpcoming(movie)}
+                locale={locale}
+                badge={
+                  movie.release_date ? (
+                    <Badge
+                      className="bg-violet-500/80 text-white border-0 text-[9px] px-1.5 backdrop-blur-sm"
+                      variant="outline"
+                    >
+                      {formatDateShort(movie.release_date, locale)}
+                    </Badge>
+                  ) : undefined
+                }
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-8 text-muted-foreground text-sm">
+            {locale === "id"
+              ? "Belum ada film yang akan tayang."
+              : "No upcoming movies yet."}
+          </div>
+        )}
+      </div>
+
       <div className="px-4 lg:px-6 pb-4 text-center">
         <p className="text-[10px] text-muted-foreground/50">
           {locale === "id"
-            ? "Data bioskop dari database internal. Jadwal dapat berubah sewaktu-waktu."
+            ? "Data bioskop didapat dari sumber internal. Jam tayang dan harga tiket dapat berubah sewaktu-waktu."
             : "Cinema data from internal database. Schedules may change without notice."}
         </p>
       </div>
@@ -2678,6 +2923,14 @@ function CinemaTabContent({ locale }: { locale: string }) {
         <UpcomingDetailModal
           movie={selectedUpcoming}
           onClose={() => setSelectedUpcoming(null)}
+          locale={locale}
+        />
+      )}
+      {selectedCinema && (
+        <CinemaDetailModal
+          cinema={selectedCinema}
+          showDate={showDateUsed}
+          onClose={() => setSelectedCinema(null)}
           locale={locale}
         />
       )}
@@ -3044,8 +3297,8 @@ function ExploreContent() {
         </h1>
         <p className="text-sm text-muted-foreground">
           {locale === "id"
-            ? "Jelajahi Ribuan Film dan Series, temukan favoritmu ⭐"
-            : "Explore thousands of movies and series, and find your favorites ⭐"}
+            ? "Jelajahi Ribuan Film dan Series, temukan favoritmu"
+            : "Explore thousands of movies and series, and find your favorites"}
         </p>
       </div>
       <div className="px-4 lg:px-6 mb-5">

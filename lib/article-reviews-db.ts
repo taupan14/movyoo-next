@@ -16,6 +16,7 @@ export interface ArticleReview {
   spice: 1 | 2 | 3 | 4 | 5;
   comment: string | null;
   tagged_movie_ids: number[];
+  reply_count: number; // ← BARU
   created_at: string;
   updated_at: string;
   profile?: {
@@ -51,7 +52,7 @@ export async function fetchArticleReviews(
   const { data, error, count } = await supabase
     .from("article_reviews")
     .select(
-      "id, article_id, user_id, spice, comment, tagged_movie_ids, created_at, updated_at",
+      "id, article_id, user_id, spice, comment, tagged_movie_ids, reply_count, created_at, updated_at",
       { count: "exact" },
     )
     .eq("article_id", articleId)
@@ -89,7 +90,8 @@ export async function fetchArticleReviews(
     user_id: r.user_id,
     spice: r.spice,
     comment: r.comment ?? null,
-    tagged_movie_ids: (r.tagged_movie_ids ?? []).map(Number), // pastikan number
+    tagged_movie_ids: (r.tagged_movie_ids ?? []).map(Number),
+    reply_count: r.reply_count ?? 0, // ← BARU
     created_at: r.created_at,
     updated_at: r.updated_at,
     profile: profileMap.get(r.user_id) ?? {

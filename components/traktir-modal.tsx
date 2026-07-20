@@ -278,7 +278,7 @@ export function TraktirModal({
                 alt="QR Saweria Movyoo"
                 width={230}
                 height={230}
-                className="rounded-lg"
+                className="rounded-lg w-[230px] h-[230px]"
               />
             </div>
 

@@ -1,8 +1,5 @@
-// app/api/contributor/articles/route.ts — FILE BARU
-//
-// GET  → list artikel milik kontributor yang login
-// POST → buat artikel baru milik kontributor yang login
-//        (status "published" akan dicek dulu lewat moderateText)
+// app/api/contributor/articles/route.ts — UPDATED
+// Tambahan: insert ke article_movies / article_tv setelah artikel dibuat
 
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabase-server";
@@ -34,15 +31,50 @@ async function ensureContributor(
     .eq("id", user.id)
     .maybeSingle();
 
-  const isContributor = profile?.role === "contributor" || profile?.role === "admin";
+  const isContributor =
+    profile?.role === "contributor" || profile?.role === "admin";
   return { user, isContributor };
+}
+
+async function saveMediaLinks(
+  supabase: Awaited<ReturnType<typeof createSupabaseServer>>,
+  articleId: number,
+  media: ArticleFormInput["media"],
+) {
+  if (!media) return;
+
+  const movieRows = media
+    .filter((m) => m.media_type === "movie")
+    .map((m) => ({
+      article_id: articleId,
+      movie_id: m.id,
+      sort_order: m.sort_order,
+      note: m.note?.trim() || null,
+    }));
+
+  const tvRows = media
+    .filter((m) => m.media_type === "tv")
+    .map((m) => ({
+      article_id: articleId,
+      tv_id: m.id,
+      sort_order: m.sort_order,
+      note: m.note?.trim() || null,
+    }));
+
+  if (movieRows.length) {
+    await supabase.from("article_movies").insert(movieRows);
+  }
+  if (tvRows.length) {
+    await supabase.from("article_tv").insert(tvRows);
+  }
 }
 
 export async function GET() {
   const supabase = await createSupabaseServer();
   const { user, isContributor } = await ensureContributor(supabase);
 
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!user)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!isContributor)
     return NextResponse.json({ error: "Bukan kontributor" }, { status: 403 });
 
@@ -52,7 +84,8 @@ export async function GET() {
     .eq("author_id", user.id)
     .order("updated_at", { ascending: false });
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+  if (error)
+    return NextResponse.json({ error: error.message }, { status: 400 });
 
   return NextResponse.json({ articles: data ?? [] });
 }
@@ -61,7 +94,8 @@ export async function POST(req: NextRequest) {
   const supabase = await createSupabaseServer();
   const { user, isContributor } = await ensureContributor(supabase);
 
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!user)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!isContributor)
     return NextResponse.json({ error: "Bukan kontributor" }, { status: 403 });
 
@@ -132,7 +166,18 @@ export async function POST(req: NextRequest) {
     .select("*")
     .single();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+  if (error)
+    return NextResponse.json({ error: error.message }, { status: 400 });
+
+  // Tautkan film/series (tidak menggagalkan create artikel kalau ada error kecil di sini)
+  try {
+    await saveMediaLinks(supabase, data.id, body.media);
+  } catch (linkError) {
+    console.error(
+      "[contributor/articles POST] gagal simpan media link:",
+      linkError,
+    );
+  }
 
   return NextResponse.json({ article: data }, { status: 201 });
 }

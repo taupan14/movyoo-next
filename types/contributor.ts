@@ -1,4 +1,5 @@
-// types/contributor.ts — FILE BARU
+// types/contributor.ts — UPDATED
+// Tambahan: MediaSearchResult, ArticleMediaLink, field `media` di form & artikel
 
 export type UserRole = "user" | "contributor" | "admin";
 
@@ -61,9 +62,32 @@ export interface ContributorArticle {
   created_at: string;
   updated_at: string;
   published_at: string | null;
+  media?: ArticleMediaLink[]; // ← tambahan: film/series yang ditautkan
 }
 
-// Payload dari form create/edit artikel kontributor
+// ── Movie/TV search & linking ────────────────────────────────────────────────
+
+export interface MediaSearchResult {
+  id: number; // id lokal di tabel movies / tv_series
+  tmdb_id: number;
+  title: string;
+  poster_path: string | null;
+  release_date: string | null; // release_date (movie) atau first_air_date (tv)
+  media_type: "movie" | "tv";
+}
+
+export interface ArticleMediaLink {
+  media_type: "movie" | "tv";
+  id: number; // movie_id atau tv_id
+  title: string;
+  poster_path: string | null;
+  release_date: string | null;
+  note?: string;
+  sort_order: number;
+}
+
+// ── Form payload ──────────────────────────────────────────────────────────────
+
 export interface ArticleFormInput {
   title: string;
   title_en?: string;
@@ -75,5 +99,6 @@ export interface ArticleFormInput {
   topic_value?: string;
   meta_title?: string;
   meta_desc?: string;
-  status: ArticleStatus; // draft | published
+  status: ArticleStatus;
+  media?: ArticleMediaLink[]; // ← tambahan
 }

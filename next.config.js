@@ -7,53 +7,29 @@ const isDev = process.env.NODE_ENV === "development";
 // dan domain serupa lainnya) untuk serve script/img/style. Karena domain ini
 // tidak stabil dan tidak terdaftar resmi, kita allow http: + https: generik
 // di connect-src / img-src / style-src alih-alih whitelist domain satu-satu.
-const ADSTERRA_DOMAINS = [
-  "*.adsterra.com",
+const ADSTERRA_NATIVE_DOMAINS = [
+  "*.highperformanceformat.com",
+  "*.profitablecpmrate.com",
   "*.effectivecpmnetwork.com",
   "*.highrevenuegate.com",
   "*.profitablegatecpm.com",
-  "*.effectiveperformancetracker.com",
-  "cdn.storageimagedisplay.com",
-  "*.storageimagedisplay.com",
 ].join(" ");
 
 const nextConfig = {
   async headers() {
     const csp = [
       "default-src 'self'",
-
-      // Scripts: Adsterra inject script dari berbagai subdomain
-      `script-src 'self' 'unsafe-inline' ${
-        isDev ? "'unsafe-eval'" : ""
-      } https: http: ${ADSTERRA_DOMAINS}`,
-
-      // style-src: ad network kadang load CSS via http:// dari CDN pihak ketiga
-      // (mis. Google Fonts mirror, custom CDN) — allow http: generik juga
-      "style-src 'self' 'unsafe-inline' https: http:",
-
-      // img-src: ad network sering serve gambar via http:// dari domain rotating
-      "img-src 'self' data: blob: https: http:",
-
-      // font-src: sama, beberapa font di-load via http
-      "font-src 'self' data: https: http:",
-
-      // connect-src: Adsterra buat XHR/fetch ke tracking endpoint yang domain-nya
-      // sering berubah dan kadang masih http:// — allow http: generik
-      `connect-src 'self' https: http: wss: ${ADSTERRA_DOMAINS}`,
-
-      // frame-src: Social Bar & Native Banner inject iframe
-      "frame-src *",
-
-      "media-src 'self' data: blob: https: http:",
-
+      `script-src 'self' 'unsafe-inline' ${isDev ? "'unsafe-eval'" : ""} ${ADSTERRA_NATIVE_DOMAINS}`,
+      "style-src 'self' 'unsafe-inline'",
+      `img-src 'self' data: blob: https://image.tmdb.org https://xlfchtwebtehpuiaqush.supabase.co https://nos.jkt-1.neo.id https://cms2.cinepolis.co.id ${ADSTERRA_NATIVE_DOMAINS}`,
+      "font-src 'self' data:",
+      `connect-src 'self' https://xlfchtwebtehpuiaqush.supabase.co wss://xlfchtwebtehpuiaqush.supabase.co ${ADSTERRA_NATIVE_DOMAINS}`,
+      "frame-src 'self' https://www.youtube-nocookie.com",
+      "media-src 'self' https://nos.jkt-1.neo.id",
       "worker-src 'self' blob:",
-
       "object-src 'none'",
-
       "base-uri 'self'",
-
       "form-action 'self'",
-
       "frame-ancestors 'self'",
     ]
       .map((d) => d.trim())

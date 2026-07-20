@@ -18,6 +18,7 @@ import { ShareButton } from "./share-button";
 import { SpiceMeterDisplay } from "./spice-meter";
 import { ReviewProvider, ReviewForm, ReviewList } from "./review-section";
 import { MovieList } from "./movie-list";
+import { LikeButton } from "./like-button";
 import NativeBannerAd from "@/components/ads/NativeBannerAd";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -113,26 +114,42 @@ export function ArticleDetailClient({ article, related }: Props) {
       <main className="min-h-screen pb-24 lg:pb-8">
         {/* ── Hero ────────────────────────────────────────────────────────── */}
         <div className="relative w-full aspect-[21/9] lg:aspect-[3/1] overflow-hidden bg-muted">
+          {/* Background: full screen, blur */}
           <img
             src={coverUrl(article.cover_path)}
-            alt={article.title}
-            className="w-full h-full object-cover"
+            alt=""
+            aria-hidden="true"
+            className="absolute -inset-y-8 inset-x-0 w-full h-[calc(100%+4rem)] object-cover scale-120 blur-sm opacity-60"
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent" />
+          <div className="absolute inset-0 bg-background/40" />
+          <div className="absolute inset-0 bg-gradient-to-t from-background via-background/50 to-transparent" />
+
+          {/* Back button */}
           <button
             onClick={() => {
               startLoader();
               history.back();
             }}
-            className="absolute top-4 left-4 lg:top-6 lg:left-8 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/50 text-white text-xs backdrop-blur-sm hover:bg-black/70 transition-colors"
+            className="absolute top-4 left-4 lg:top-6 lg:left-8 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/50 text-white text-xs backdrop-blur-sm hover:bg-black/70 transition-colors"
           >
             <ChevronLeft className="w-3.5 h-3.5" />
             Kembali
           </button>
+
+          {/* Poster: landscape, centered, floating */}
+          <div className="absolute inset-0 flex items-center justify-center px-6 lg:px-0">
+            <div className="relative w-[75%] lg:w-[55%] aspect-video rounded-xl overflow-hidden shadow-2xl">
+              <img
+                src={coverUrl(article.cover_path)}
+                alt={article.title}
+                className="w-full h-full object-cover"
+              />
+            </div>
+          </div>
         </div>
 
         {/* ── Content ─────────────────────────────────────────────────────── */}
-        <div className="px-4 lg:px-8 -mt-16 lg:-mt-24 relative z-10">
+        <div className="px-4 lg:px-8 -mt-17 lg:-mt-25 relative z-10">
           <div className="max-w-6xl mx-auto flex flex-col lg:flex-row gap-10">
             {/* ── Main column ────────────────────────────────────────────── */}
             <article className="flex-1 min-w-0">
@@ -146,7 +163,7 @@ export function ArticleDetailClient({ article, related }: Props) {
                 </div>
               )}
 
-              <h1 className="text-2xl lg:text-4xl font-bold text-foreground leading-tight mb-4">
+              <h1 className="text-2xl lg:text-3xl font-bold text-foreground leading-tight mb-4">
                 {article.title}
               </h1>
 
@@ -165,14 +182,16 @@ export function ArticleDetailClient({ article, related }: Props) {
                   reviewCount={reviewCount}
                   size="sm"
                 />
+
                 <ShareButton slug={article.slug} title={article.title} />
+                <LikeButton slug={article.slug} />
               </div>
 
               {/* Editorial body */}
               {article.body && (
                 <div
                   className={cn(
-                    "prose prose-sm prose-invert max-w-none mb-8",
+                    "prose prose-xs prose-invert max-w-none mb-8",
                     "prose-p:text-muted-foreground prose-p:leading-relaxed",
                     "prose-headings:text-foreground prose-headings:font-semibold",
                     "prose-strong:text-foreground",
