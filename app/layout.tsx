@@ -1,6 +1,5 @@
 import "./globals.css";
 import type { Metadata } from "next";
-import Script from "next/script";
 import { Inter } from "next/font/google";
 import { Providers } from "./providers";
 import { PageLoader } from "@/components/page-loader";
@@ -74,6 +73,9 @@ export const metadata: Metadata = {
   alternates: {
     canonical: BASE_URL,
   },
+  other: {
+    "google-adsense-account": "ca-pub-5129841779893087",
+  },
 };
 
 export default async function RootLayout({
@@ -89,7 +91,7 @@ export default async function RootLayout({
         {/* Google AdSense */}
         <Script
           id="google-adsense"
-          strategy="beforeInteractive"
+          strategy="afterInteractive"
           src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-5129841779893087"
           crossOrigin="anonymous"
         />
