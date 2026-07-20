@@ -1,12 +1,11 @@
 import "./globals.css";
 import type { Metadata } from "next";
+import Script from "next/script";
 import { Inter } from "next/font/google";
 import { Providers } from "./providers";
 import { PageLoader } from "@/components/page-loader";
 import { Suspense } from "react";
 import { Footer } from "@/components/footer";
-import PopunderAd from "@/components/ads/PopunderAd";
-import SocialBarAd from "@/components/ads/SocialBarAd";
 import { AdsProvider } from "@/components/ads/AdsProvider";
 import { getInitialAdState } from "@/lib/ads/get-ad-flags";
 
@@ -14,7 +13,7 @@ export const dynamic = "force-dynamic";
 
 const inter = Inter({ subsets: ["latin"] });
 
-const BASE_URL = "https://movyoo.id"; // ← ganti dengan domain kamu
+const BASE_URL = "https://movyoo.id";
 
 export const metadata: Metadata = {
   metadataBase: new URL(BASE_URL),
@@ -82,36 +81,26 @@ export default async function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  // Fetch tier + resolve ad flags sekali di server menggunakan cookies.
-  // Tidak ada round-trip tambahan dari browser — children langsung
-  // menerima data final lewat AdsProvider context.
   const initialAdState = await getInitialAdState();
 
   return (
     <html lang="id">
       <body className={inter.className}>
+        {/* Google AdSense */}
+        <Script
+          id="google-adsense"
+          async
+          strategy="afterInteractive"
+          src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-5129841779893087"
+          crossOrigin="anonymous"
+        />
+
         <Providers>
           <AdsProvider initialState={initialAdState}>
             {children}
             <Suspense>
               <PageLoader />
             </Suspense>
-
-            {/*
-             * === AD PLACEMENT ===
-             *
-             * PopunderAd  — inject 1x ke <head>, tidak render visual apapun.
-             *               Popunder muncul di tab/window baru saat user klik pertama.
-             *
-             * SocialBarAd — floating bar di tepi layar (posisi diatur Adsterra).
-             *               Letakkan di luar semua konten agar tidak mempengaruhi layout.
-             *
-             * Keduanya sekarang baca ad flags dari AdsProvider context
-             * (di-resolve di server), bukan fetch Supabase client-side.
-             */}
-            <PopunderAd />
-            <SocialBarAd />
-
             <Footer />
           </AdsProvider>
         </Providers>

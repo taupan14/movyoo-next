@@ -3100,7 +3100,7 @@ function ExploreContent() {
         const params = new URLSearchParams({
           lang: locale === "id" ? "id" : "en",
           page: String(currentPage),
-          limit: "20",
+          limit: "24",
         });
 
         if (appliedSearch) params.set("search", appliedSearch);
