@@ -70,7 +70,7 @@ export default function AdUnit({
       //   - redirect window.top / halaman utama
       //   - window.open() tab/window baru
       //   - keluar dari sandbox dengan cara apapun
-      sandbox="allow-scripts allow-same-origin"
+      sandbox="allow-scripts"
       style={{
         width: "100%",
         minHeight,

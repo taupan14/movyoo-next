@@ -21,7 +21,7 @@ const nextConfig = {
       "default-src 'self'",
       `script-src 'self' 'unsafe-inline' ${isDev ? "'unsafe-eval'" : ""} ${ADSTERRA_NATIVE_DOMAINS}`,
       "style-src 'self' 'unsafe-inline'",
-      `img-src 'self' data: blob: https://image.tmdb.org https://xlfchtwebtehpuiaqush.supabase.co https://nos.jkt-1.neo.id https://cms2.cinepolis.co.id ${ADSTERRA_NATIVE_DOMAINS}`,
+      `img-src 'self' data: blob: https://image.tmdb.org https://xlfchtwebtehpuiaqush.supabase.co https://nos.jkt-1.neo.id https://cms2.cinepolis.co.id https://upload.wikimedia.org https://encrypted-tbn0.gstatic.com https://cdn.festivalfilm.id https://img.youtube.com https://placehold.co ${ADSTERRA_NATIVE_DOMAINS}`,
       "font-src 'self' data:",
       `connect-src 'self' https://xlfchtwebtehpuiaqush.supabase.co wss://xlfchtwebtehpuiaqush.supabase.co ${ADSTERRA_NATIVE_DOMAINS}`,
       "frame-src 'self' https://www.youtube-nocookie.com",
