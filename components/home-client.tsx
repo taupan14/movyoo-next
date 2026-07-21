@@ -40,7 +40,7 @@ import { FilmFestivalSection } from "./home/festival-section";
 import { HiddenGemsSection } from "./hidden-gems-section";
 import { AICuratorSection, type PosterMap } from "./ai-curator-section";
 
-import NativeBannerAd from "@/components/ads/NativeBannerAd";
+import AdSenseUnit from "@/components/ads/AdSenseUnit";
 // ─── Main HomeClient Component ────────────────────────────────────────────────
 
 export function HomeClient() {
@@ -298,7 +298,7 @@ export function HomeClient() {
           ))}
 
           {/* Dark base + editorial grid overlay */}
-          <div className="absolute inset-0 bg-[#0a0c14]/70 pointer-events-none" />
+          <div className="absolute inset-0 bg-[#0a0c14]/50 pointer-events-none" />
           <div
             className="absolute inset-0 pointer-events-none"
             style={{
@@ -488,7 +488,7 @@ export function HomeClient() {
         )}
 
         {/* ── Film Indonesia Popular ─────────────────────────────────────────── */}
-        {indonesianPopularMovies.length > 0 && (
+        {/* {indonesianPopularMovies.length > 0 && (
           <MovieRow
             title={
               locale === "id"
@@ -499,7 +499,7 @@ export function HomeClient() {
             pathTitle={locale === "id" ? "Lihat semua" : "See all"}
             movies={indonesianPopularMovies}
           />
-        )}
+        )} */}
 
         {/* ── Trending Movies ────────────────────────────────────────────────── */}
         <TrendingMovieRow
@@ -530,7 +530,7 @@ export function HomeClient() {
         {/* ── Segera Tayang ──────────────────────────────────────────────────── */}
         <MovieRow title={t("coming_soon")} movies={upcoming} />
 
-        <NativeBannerAd className="px-4" />
+        <AdSenseUnit slot={process.env.NEXT_PUBLIC_ADSENSE_SLOT_DISPLAY!} />
 
         {/* ── Trending TV Series ─────────────────────────────────────────────── */}
         <TrendingSeriesRow

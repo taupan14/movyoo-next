@@ -75,7 +75,7 @@ export const metadata: Metadata = {
     canonical: BASE_URL,
   },
   other: {
-    "google-adsense-account": "ca-pub-5129841779893087",
+    "google-adsense-account": process.env.NEXT_PUBLIC_ADSENSE_CLIENT_ID!,
   },
 };
 
@@ -88,15 +88,15 @@ export default async function RootLayout({
 
   return (
     <html lang="id">
-      <body className={inter.className}>
-        {/* Google AdSense */}
-        <Script
-          id="google-adsense"
-          strategy="afterInteractive"
-          src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-5129841779893087"
+      {/* Google AdSense */}
+      <head>
+        <script
+          async
+          src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${process.env.NEXT_PUBLIC_ADSENSE_CLIENT_ID}`}
           crossOrigin="anonymous"
         />
-
+      </head>
+      <body className={inter.className}>
         <Providers>
           <AdsProvider initialState={initialAdState}>
             {children}

@@ -42,7 +42,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { motion } from "framer-motion";
 
-import NativeBannerAd from "@/components/ads/NativeBannerAd";
+import AdSenseUnit from "@/components/ads/AdSenseUnit";
 
 // ─── Types (Explore) ──────────────────────────────────────────────────────────
 
@@ -3458,7 +3458,7 @@ function ExploreContent() {
         </>
       )}
 
-      <NativeBannerAd className="px-4" />
+      <AdSenseUnit slot={process.env.NEXT_PUBLIC_ADSENSE_SLOT_DISPLAY!} />
 
       {/* Movie / TV Grid */}
       {!isCinemaTab && (

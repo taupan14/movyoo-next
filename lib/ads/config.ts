@@ -96,6 +96,7 @@ export const GLOBAL_ADS_CONFIG = {
   popunder: process.env.NEXT_PUBLIC_ADS_POPUNDER_ENABLED !== "false",
   socialBar: process.env.NEXT_PUBLIC_ADS_SOCIAL_ENABLED !== "false",
   nativeBanner: process.env.NEXT_PUBLIC_ADS_NATIVE_ENABLED !== "false",
+  adsense: process.env.NEXT_PUBLIC_ADS_ADSENSE_ENABLED !== "false",
 } as const;
 
 // Default ke `true` kalau env var belum di-set (fail-open, ads tetap jalan
@@ -118,6 +119,7 @@ export interface AdFlags {
   showPopunder: boolean;
   showSocialBar: boolean;
   showNativeBanner: boolean;
+  showAdsense: boolean;
 }
 
 /**
@@ -136,6 +138,7 @@ export function resolveAdFlags(tier: DonationTier): AdFlags {
     showSocialBar: GLOBAL_ADS_CONFIG.socialBar && tierFlags.showSocialBar,
     showNativeBanner:
       GLOBAL_ADS_CONFIG.nativeBanner && tierFlags.showNativeBanner,
+    showAdsense: GLOBAL_ADS_CONFIG.adsense && tierFlags.showAdsense,
   };
 }
 
@@ -146,16 +149,12 @@ export function resolveAdFlags(tier: DonationTier): AdFlags {
 function resolveTierFlags(tier: DonationTier): AdFlags {
   switch (tier) {
     case "nominee":
-      return {
-        showPopunder: false,
-        showSocialBar: true,
-        showNativeBanner: true,
-      };
     case "bronze":
       return {
         showPopunder: false,
         showSocialBar: false,
-        showNativeBanner: true,
+        showNativeBanner: false,
+        showAdsense: true,
       };
     case "silver":
     case "gold":
@@ -164,12 +163,14 @@ function resolveTierFlags(tier: DonationTier): AdFlags {
         showPopunder: false,
         showSocialBar: false,
         showNativeBanner: false,
+        showAdsense: false,
       };
     default:
       return {
         showPopunder: true,
         showSocialBar: true,
         showNativeBanner: true,
+        showAdsense: true,
       };
   }
 }

@@ -19,7 +19,7 @@ import { SpiceMeterDisplay } from "./spice-meter";
 import { ReviewProvider, ReviewForm, ReviewList } from "./review-section";
 import { MovieList } from "./movie-list";
 import { LikeButton } from "./like-button";
-import NativeBannerAd from "@/components/ads/NativeBannerAd";
+import AdSenseUnit from "@/components/ads/AdSenseUnit";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -204,7 +204,9 @@ export function ArticleDetailClient({ article, related }: Props) {
               {/* Daftar film */}
               <MovieList items={article.items} movies={article.movies} />
 
-              <NativeBannerAd className="px-4" />
+              <AdSenseUnit
+                slot={process.env.NEXT_PUBLIC_ADSENSE_SLOT_DISPLAY!}
+              />
 
               {/* List ulasan — di bawah daftar film */}
               <ReviewList />

@@ -53,7 +53,7 @@ import {
 } from "@/components/ui/tooltip";
 import { supabase } from "@/lib/supabase";
 
-import NativeBannerAd from "@/components/ads/NativeBannerAd";
+import AdSenseUnit from "@/components/ads/AdSenseUnit";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -1371,7 +1371,7 @@ export default function TvDetailClient() {
           </section>
         )}
 
-        <NativeBannerAd className="px-4" />
+        <AdSenseUnit slot={process.env.NEXT_PUBLIC_ADSENSE_SLOT_DISPLAY!} />
 
         {/* ============================================================ */}
         {/*  4. FILM SCORE                                                */}
