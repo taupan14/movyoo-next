@@ -38,7 +38,7 @@ const nextConfig = {
       `img-src 'self' data: blob: https://image.tmdb.org https://xlfchtwebtehpuiaqush.supabase.co https://nos.jkt-1.neo.id https://cms2.cinepolis.co.id https://upload.wikimedia.org https://encrypted-tbn0.gstatic.com https://cdn.festivalfilm.id https://img.youtube.com https://placehold.co ${GOOGLE_ADSENSE_DOMAINS}`,
       "font-src 'self' data:",
       `connect-src 'self' https://xlfchtwebtehpuiaqush.supabase.co wss://xlfchtwebtehpuiaqush.supabase.co ${GOOGLE_ADSENSE_DOMAINS}`,
-      `frame-src 'self' https://www.youtube-nocookie.com ${GOOGLE_ADSENSE_DOMAINS}`,
+      `frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com ${GOOGLE_ADSENSE_DOMAINS}`,
       "media-src 'self' https://nos.jkt-1.neo.id",
       "worker-src 'self' blob:",
       "object-src 'none'",
