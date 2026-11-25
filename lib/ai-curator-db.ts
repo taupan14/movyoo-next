@@ -218,6 +218,8 @@ export async function fetchWatchlistGems(
     overview: pickOverview(m),
     release_date: m.release_date,
     genre_ids: genreMap.get(m.id) ?? [],
+    genre_names: [], // <- tambahkan
+    platforms: [], // <- tambahkan
     media_type: "movie" as const,
     gem_score: 0,
   }));

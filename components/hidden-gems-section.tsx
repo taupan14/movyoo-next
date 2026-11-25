@@ -22,6 +22,7 @@ interface HiddenGem {
   tmdb_id: number;
   title: string;
   poster_path: string | null;
+  backdrop_path: string | null;
   vote_average: number;
   vote_count: number;
   popularity: number;
