@@ -15,7 +15,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import Link from "next/link";
-import NativeBannerAd from "@/components/ads/NativeBannerAd";
+// import NativeBannerAd from "@/components/ads/NativeBannerAd";
 
 // ─── TYPES ──────────────────────────────────────────────────────────────────
 
@@ -482,7 +482,7 @@ export default function LastChanceClient() {
         </div>
       </div>
 
-      <NativeBannerAd className="px-4" />
+      {/* <NativeBannerAd className="px-4" /> */}
 
       {/* Urgency summary cards */}
       <div className="animate-slide-up grid grid-cols-3 gap-3 mb-6">

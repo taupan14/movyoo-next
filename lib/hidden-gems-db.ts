@@ -26,6 +26,8 @@ export interface HiddenGem {
   release_date?: string; // movie only
   first_air_date?: string; // tv only
   genre_ids: number[]; // tmdb_genre_id[]
+  genre_names: string[]; // maks 3, untuk ditampilkan di UI
+  platforms: string[]; // nama platform streaming, region ID
   media_type: "movie" | "tv";
   gem_score: number; // skor internal: vote_avg * log(vote_count) / popularity
 }
@@ -42,7 +44,9 @@ const POPULARITY_THRESHOLD = 30;
 const MIN_VOTE_AVERAGE = 7.5;
 const MIN_VOTE_COUNT = 100;
 const POOL_LIMIT = 80; // ambil lebih banyak, lalu filter & urutkan di JS
-const RESULT_LIMIT = 12; // tampilkan N per tipe
+const RESULT_LIMIT = 20; // tampilkan N per tipe
+const MAX_GENRES_SHOWN = 3;
+const PLATFORM_REGION = "ID";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -92,6 +96,19 @@ function seededShuffle<T>(arr: T[], seed: number): T[] {
     [result[i], result[j]] = [result[j], result[i]];
   }
   return result;
+}
+
+/** Dedup + trim array string, buang kosong */
+function uniqueNonEmpty(values: (string | null | undefined)[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const v of values) {
+    const trimmed = v?.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    out.push(trimmed);
+  }
+  return out;
 }
 
 // ─── Genre Detection ──────────────────────────────────────────────────────────
@@ -147,13 +164,154 @@ export async function detectTopGenreFromWatchlist(
   return (genreRow as any)?.tmdb_genre_id ?? null;
 }
 
+// ─── Genre & Platform Lookup ───────────────────────────────────────────────────
+
+interface GenreInfo {
+  ids: number[]; // tmdb_genre_id[]
+  names: string[]; // maks MAX_GENRES_SHOWN, urut sesuai relasi
+}
+
+/**
+ * Ambil genre (id tmdb + nama, maks MAX_GENRES_SHOWN) untuk sekumpulan movie.
+ * Return map: movie_id → GenreInfo
+ */
+async function fetchMovieGenreMap(
+  movieIds: number[],
+): Promise<Map<number, GenreInfo>> {
+  const map = new Map<number, GenreInfo>();
+  if (!movieIds.length) return map;
+
+  const { data: genreLinks, error } = await supabase
+    .from("movie_genres")
+    .select("movie_id, genres(tmdb_genre_id, name)")
+    .in("movie_id", movieIds);
+
+  if (error) {
+    console.error("[hidden-gems-db] fetchMovieGenreMap:", error.message);
+    return map;
+  }
+
+  for (const link of (genreLinks ?? []) as any[]) {
+    const tmdbGenreId = link.genres?.tmdb_genre_id;
+    const name = link.genres?.name;
+    if (!tmdbGenreId || !name) continue;
+
+    const entry = map.get(link.movie_id) ?? { ids: [], names: [] };
+    entry.ids.push(tmdbGenreId);
+    if (entry.names.length < MAX_GENRES_SHOWN) entry.names.push(name);
+    map.set(link.movie_id, entry);
+  }
+
+  return map;
+}
+
+/** Sama seperti fetchMovieGenreMap, tapi untuk tv_series (tv_genres) */
+async function fetchSeriesGenreMap(
+  seriesIds: number[],
+): Promise<Map<number, GenreInfo>> {
+  const map = new Map<number, GenreInfo>();
+  if (!seriesIds.length) return map;
+
+  const { data: genreLinks, error } = await supabase
+    .from("tv_genres")
+    .select("series_id, genres(tmdb_genre_id, name)")
+    .in("series_id", seriesIds);
+
+  if (error) {
+    console.error("[hidden-gems-db] fetchSeriesGenreMap:", error.message);
+    return map;
+  }
+
+  for (const link of (genreLinks ?? []) as any[]) {
+    const tmdbGenreId = link.genres?.tmdb_genre_id;
+    const name = link.genres?.name;
+    if (!tmdbGenreId || !name) continue;
+
+    const entry = map.get(link.series_id) ?? { ids: [], names: [] };
+    entry.ids.push(tmdbGenreId);
+    if (entry.names.length < MAX_GENRES_SHOWN) entry.names.push(name);
+    map.set(link.series_id, entry);
+  }
+
+  return map;
+}
+
+/**
+ * Ambil nama platform streaming (region ID) untuk sekumpulan movie.
+ * Return map: movie_id → platform name[] (unik, tanpa urutan khusus).
+ */
+async function fetchMoviePlatformMap(
+  movieIds: number[],
+): Promise<Map<number, string[]>> {
+  const map = new Map<number, string[]>();
+  if (!movieIds.length) return map;
+
+  const { data: platformLinks, error } = await supabase
+    .from("movie_platforms")
+    .select("movie_id, region, platforms(name)")
+    .in("movie_id", movieIds)
+    .eq("region", PLATFORM_REGION);
+
+  if (error) {
+    console.error("[hidden-gems-db] fetchMoviePlatformMap:", error.message);
+    return map;
+  }
+
+  const grouped = new Map<number, (string | null | undefined)[]>();
+  for (const link of (platformLinks ?? []) as any[]) {
+    const name = link.platforms?.name;
+    const arr = grouped.get(link.movie_id) ?? [];
+    arr.push(name);
+    grouped.set(link.movie_id, arr);
+  }
+
+  for (const [movieId, names] of grouped) {
+    map.set(movieId, uniqueNonEmpty(names));
+  }
+
+  return map;
+}
+
+/** Sama seperti fetchMoviePlatformMap, tapi untuk tv_series (tv_platforms) */
+async function fetchSeriesPlatformMap(
+  seriesIds: number[],
+): Promise<Map<number, string[]>> {
+  const map = new Map<number, string[]>();
+  if (!seriesIds.length) return map;
+
+  const { data: platformLinks, error } = await supabase
+    .from("tv_platforms")
+    .select("series_id, region, platforms(name)")
+    .in("series_id", seriesIds)
+    .eq("region", PLATFORM_REGION);
+
+  if (error) {
+    console.error("[hidden-gems-db] fetchSeriesPlatformMap:", error.message);
+    return map;
+  }
+
+  const grouped = new Map<number, (string | null | undefined)[]>();
+  for (const link of (platformLinks ?? []) as any[]) {
+    const name = link.platforms?.name;
+    const arr = grouped.get(link.series_id) ?? [];
+    arr.push(name);
+    grouped.set(link.series_id, arr);
+  }
+
+  for (const [seriesId, names] of grouped) {
+    map.set(seriesId, uniqueNonEmpty(names));
+  }
+
+  return map;
+}
+
 // ─── Movie Hidden Gems ────────────────────────────────────────────────────────
 
 async function fetchHiddenGemMovies(
   lang: string,
   topGenreTmdbId: number | null,
 ): Promise<HiddenGem[]> {
-  let query = supabase
+  const query = supabase
     .from("movies")
     .select(
       `id, tmdb_id, title, poster_path, backdrop_path,
@@ -176,42 +334,38 @@ async function fetchHiddenGemMovies(
 
   if (!movies?.length) return [];
 
-  // Ambil genre untuk semua film ini sekaligus
   const movieIds = movies.map((m: any) => m.id);
-  const { data: genreLinks } = await supabase
-    .from("movie_genres")
-    .select("movie_id, genres(tmdb_genre_id)")
-    .in("movie_id", movieIds);
 
-  // Build map: movie_id → tmdb_genre_id[]
-  const genreMap = new Map<number, number[]>();
-  for (const link of (genreLinks ?? []) as any[]) {
-    const gid = link.genres?.tmdb_genre_id;
-    if (!gid) continue;
-    const arr = genreMap.get(link.movie_id) ?? [];
-    arr.push(gid);
-    genreMap.set(link.movie_id, arr);
-  }
+  // Genre & platform diambil paralel, sekali per batch
+  const [genreMap, platformMap] = await Promise.all([
+    fetchMovieGenreMap(movieIds),
+    fetchMoviePlatformMap(movieIds),
+  ]);
 
-  const gems: HiddenGem[] = movies.map((m: any) => ({
-    id: m.id,
-    tmdb_id: m.tmdb_id,
-    title: m.title,
-    poster_path: m.poster_path,
-    backdrop_path: m.backdrop_path,
-    vote_average: Number(m.vote_average),
-    vote_count: Number(m.vote_count),
-    popularity: Number(m.popularity),
-    overview: pickOverview(m, lang),
-    release_date: m.release_date,
-    genre_ids: genreMap.get(m.id) ?? [],
-    media_type: "movie" as const,
-    gem_score: calcGemScore(
-      Number(m.vote_average),
-      Number(m.vote_count),
-      Number(m.popularity),
-    ),
-  }));
+  const gems: HiddenGem[] = movies.map((m: any) => {
+    const genreInfo = genreMap.get(m.id) ?? { ids: [], names: [] };
+    return {
+      id: m.id,
+      tmdb_id: m.tmdb_id,
+      title: m.title,
+      poster_path: m.poster_path,
+      backdrop_path: m.backdrop_path,
+      vote_average: Number(m.vote_average),
+      vote_count: Number(m.vote_count),
+      popularity: Number(m.popularity),
+      overview: pickOverview(m, lang),
+      release_date: m.release_date,
+      genre_ids: genreInfo.ids,
+      genre_names: genreInfo.names,
+      platforms: platformMap.get(m.id) ?? [],
+      media_type: "movie" as const,
+      gem_score: calcGemScore(
+        Number(m.vote_average),
+        Number(m.vote_count),
+        Number(m.popularity),
+      ),
+    };
+  });
 
   return rankAndSlice(gems, topGenreTmdbId);
 }
@@ -243,42 +397,37 @@ async function fetchHiddenGemSeries(
 
   if (!series?.length) return [];
 
-  // Genre untuk series — asumsi tabel tv_genres & tv_series_genres
-  // (sesuaikan nama tabel jika berbeda di project kamu)
   const seriesIds = series.map((s: any) => s.id);
-  const { data: genreLinks } = await supabase
-    .from("tv_series_genres")
-    .select("series_id, genres(tmdb_genre_id)")
-    .in("series_id", seriesIds);
 
-  const genreMap = new Map<number, number[]>();
-  for (const link of (genreLinks ?? []) as any[]) {
-    const gid = link.genres?.tmdb_genre_id;
-    if (!gid) continue;
-    const arr = genreMap.get(link.series_id) ?? [];
-    arr.push(gid);
-    genreMap.set(link.series_id, arr);
-  }
+  const [genreMap, platformMap] = await Promise.all([
+    fetchSeriesGenreMap(seriesIds),
+    fetchSeriesPlatformMap(seriesIds),
+  ]);
 
-  const gems: HiddenGem[] = series.map((s: any) => ({
-    id: s.id,
-    tmdb_id: s.tmdb_id,
-    title: s.name,
-    poster_path: s.poster_path,
-    backdrop_path: s.backdrop_path,
-    vote_average: Number(s.vote_average),
-    vote_count: Number(s.vote_count),
-    popularity: Number(s.popularity),
-    overview: pickOverview(s, lang),
-    first_air_date: s.first_air_date,
-    genre_ids: genreMap.get(s.id) ?? [],
-    media_type: "tv" as const,
-    gem_score: calcGemScore(
-      Number(s.vote_average),
-      Number(s.vote_count),
-      Number(s.popularity),
-    ),
-  }));
+  const gems: HiddenGem[] = series.map((s: any) => {
+    const genreInfo = genreMap.get(s.id) ?? { ids: [], names: [] };
+    return {
+      id: s.id,
+      tmdb_id: s.tmdb_id,
+      title: s.name,
+      poster_path: s.poster_path,
+      backdrop_path: s.backdrop_path,
+      vote_average: Number(s.vote_average),
+      vote_count: Number(s.vote_count),
+      popularity: Number(s.popularity),
+      overview: pickOverview(s, lang),
+      first_air_date: s.first_air_date,
+      genre_ids: genreInfo.ids,
+      genre_names: genreInfo.names,
+      platforms: platformMap.get(s.id) ?? [],
+      media_type: "tv" as const,
+      gem_score: calcGemScore(
+        Number(s.vote_average),
+        Number(s.vote_count),
+        Number(s.popularity),
+      ),
+    };
+  });
 
   return rankAndSlice(gems, topGenreTmdbId);
 }

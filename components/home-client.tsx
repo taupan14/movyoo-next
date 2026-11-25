@@ -508,14 +508,14 @@ export function HomeClient() {
         />
 
         {/* ── Film Best Seller ───────────────────────────────────────────────── */}
-        <MovieRow
+        {/* <MovieRow
           title={
             locale === "id"
               ? "Film Yang Mungkin Kamu Suka"
               : "Movies You Might Like"
           }
           movies={bestSeller}
-        />
+        /> */}
 
         <HiddenGemsSection locale={locale} onGemsLoaded={handleGemsLoaded} />
         {/* <AICuratorSection locale={locale} posterMap={gemPosterMap} /> */}
@@ -530,7 +530,7 @@ export function HomeClient() {
         {/* ── Segera Tayang ──────────────────────────────────────────────────── */}
         <MovieRow title={t("coming_soon")} movies={upcoming} />
 
-        <AdSenseUnit slot={process.env.NEXT_PUBLIC_ADSENSE_SLOT_DISPLAY!} />
+        {/* <AdSenseUnit slot={process.env.NEXT_PUBLIC_ADSENSE_SLOT_DISPLAY!} /> */}
 
         {/* ── Trending TV Series ─────────────────────────────────────────────── */}
         <TrendingSeriesRow
@@ -564,7 +564,7 @@ export function HomeClient() {
         <PopularCastSection cast={popularCast} locale={locale} />
 
         {/* ── Festival Film ──────────────────────────────────────────────────── */}
-        <FilmFestivalSection locale={locale} />
+        {/* <FilmFestivalSection locale={locale} /> */}
       </div>
 
       {/* ── Toast ─────────────────────────────────────────────────────────────── */}

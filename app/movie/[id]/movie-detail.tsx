@@ -350,6 +350,7 @@ function TrailerModal({
             className="w-full h-full"
             src={`https://www.youtube.com/embed/${trailerKey}?autoplay=1&rel=0`}
             title={`${title} — Trailer`}
+            referrerPolicy="strict-origin-when-cross-origin"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
             allowFullScreen
           />

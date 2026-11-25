@@ -30,7 +30,7 @@ import {
   formatHypeScore,
 } from "@/types/reward";
 
-import NativeBannerAd from "@/components/ads/NativeBannerAd";
+// import NativeBannerAd from "@/components/ads/NativeBannerAd";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -1139,7 +1139,7 @@ export function RewardClient() {
         />
       )}
 
-      <NativeBannerAd className="px-4" />
+      {/* <NativeBannerAd className="px-4" /> */}
     </div>
   );
 }

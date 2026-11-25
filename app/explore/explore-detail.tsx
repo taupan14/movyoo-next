@@ -42,7 +42,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { motion } from "framer-motion";
 
-import AdSenseUnit from "@/components/ads/AdSenseUnit";
+// import AdSenseUnit from "@/components/ads/AdSenseUnit";
 
 // ─── Types (Explore) ──────────────────────────────────────────────────────────
 
@@ -3100,7 +3100,7 @@ function ExploreContent() {
         const params = new URLSearchParams({
           lang: locale === "id" ? "id" : "en",
           page: String(currentPage),
-          limit: "24",
+          limit: "32",
         });
 
         if (appliedSearch) params.set("search", appliedSearch);
@@ -3458,7 +3458,7 @@ function ExploreContent() {
         </>
       )}
 
-      <AdSenseUnit slot={process.env.NEXT_PUBLIC_ADSENSE_SLOT_DISPLAY!} />
+      {/* <AdSenseUnit slot={process.env.NEXT_PUBLIC_ADSENSE_SLOT_DISPLAY!} /> */}
 
       {/* Movie / TV Grid */}
       {!isCinemaTab && (

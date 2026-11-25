@@ -27,7 +27,7 @@ import {
   Play,
 } from "lucide-react";
 
-import NativeBannerAd from "@/components/ads/NativeBannerAd";
+// import NativeBannerAd from "@/components/ads/NativeBannerAd";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1411,7 +1411,7 @@ export default function SwipePage() {
         </div>
       )}
 
-      <NativeBannerAd className="px-4" />
+      {/* <NativeBannerAd className="px-4" /> */}
     </div>
   );
 }

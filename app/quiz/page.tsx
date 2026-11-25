@@ -45,7 +45,7 @@ import type {
   TriviaCategory,
 } from "@/types/trivia";
 
-import NativeBannerAd from "@/components/ads/NativeBannerAd";
+// import NativeBannerAd from "@/components/ads/NativeBannerAd";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const TIME_PER_QUESTION = 15; // detik
@@ -804,7 +804,7 @@ export default function QuizPage() {
             <Trophy className="w-4 h-4" /> Lihat Leaderboard Minggu Ini
           </button>
         </div>
-        <NativeBannerAd className="px-4" />
+        {/* <NativeBannerAd className="px-4" /> */}
       </>
     );
   }
@@ -1046,7 +1046,7 @@ export default function QuizPage() {
             </button>
           )}
         </div>
-        <NativeBannerAd className="px-4" />
+        {/* <NativeBannerAd className="px-4" /> */}
       </>
     );
   }
@@ -1171,7 +1171,7 @@ export default function QuizPage() {
             </Link>
           </div>
         </div>
-        <NativeBannerAd className="px-4" />
+        {/* <NativeBannerAd className="px-4" /> */}
       </>
     );
   }
@@ -1274,7 +1274,7 @@ export default function QuizPage() {
             </div>
           )}
         </div>
-        <NativeBannerAd className="px-4" />
+        {/* <NativeBannerAd className="px-4" /> */}
       </>
     );
   }

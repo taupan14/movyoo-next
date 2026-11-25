@@ -29,7 +29,7 @@ import type { ArticleSummary, TopicType } from "@/lib/articles-db";
 import { SpiceMeterDisplay } from "./spice-meter";
 import { BecomeContributorButton } from "./become-contributor-button"; // ← tambah ini
 
-import AdSenseUnit from "@/components/ads/AdSenseUnit";
+// import AdSenseUnit from "@/components/ads/AdSenseUnit";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -294,7 +294,7 @@ export function ArticlesClient() {
         </div>
       </div>
 
-      <AdSenseUnit slot={process.env.NEXT_PUBLIC_ADSENSE_SLOT_DISPLAY!} />
+      {/* <AdSenseUnit slot={process.env.NEXT_PUBLIC_ADSENSE_SLOT_DISPLAY!} /> */}
 
       {/* ── Grid ──────────────────────────────────────────────────────────── */}
       <div className="px-4 lg:px-6 mb-6">
